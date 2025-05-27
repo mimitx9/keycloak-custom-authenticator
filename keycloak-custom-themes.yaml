@@ -1,0 +1,42 @@
+extraVolumes:
+  - name: theme-volume
+    configMap:
+      name: keycloak-theme
+  - name: theme-volume-2
+    configMap:
+      name: keycloak-mytheme-2
+
+extraVolumeMounts:
+  - name: theme-volume
+    mountPath: /opt/bitnami/keycloak/themes/my-theme/theme.properties
+    subPath: theme.properties
+  - name: theme-volume
+    mountPath: /opt/bitnami/keycloak/themes/my-theme/login/cccd-phone-form.ftl
+    subPath: cccd-phone-form.ftl
+  - name: theme-volume
+    mountPath: /opt/bitnami/keycloak/themes/my-theme/login/resources/css/styles.css
+    subPath: styles.css
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/theme.properties
+    subPath: theme.properties
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/login.ftl
+    subPath: login.ftl
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/resources/css/login.css
+    subPath: styles.css
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/template.ftl
+    subPath: template.ftl
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/messages/messages.properties
+    subPath: messages.properties
+  - name: theme-volume-2
+    mountPath: /opt/bitnami/keycloak/themes/theme-a/login/messages/messages_vi.properties
+    subPath: messages_vi.properties
+
+auth:
+  adminUser: admin
+  adminPassword: password123
+service:
+  type: NodePort

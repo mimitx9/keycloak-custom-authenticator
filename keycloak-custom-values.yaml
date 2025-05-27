@@ -1,0 +1,20 @@
+initContainers:
+  - name: copy-custom-jars
+    image: busybox
+    command:
+      - sh
+      - -c
+      - |
+        cp /tmp/jars/* /providers/
+        echo "Custom JARs copied to providers directory"
+    volumeMounts:
+      - name: custom-jar-source
+        mountPath: /tmp/jars
+      - name: empty-dir
+        mountPath: /providers
+        subPath: app-providers-dir
+
+extraVolumes:
+  - name: custom-jar-source
+    configMap:
+      name: custom-authenticator

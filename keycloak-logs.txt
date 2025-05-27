@@ -1,0 +1,88 @@
+[38;5;6mkeycloak [38;5;5m04:15:35.20 [0m[38;5;2mINFO [0m ==> 
+[38;5;6mkeycloak [38;5;5m04:15:35.21 [0m[38;5;2mINFO [0m ==> [1mWelcome to the Bitnami keycloak container[0m
+[38;5;6mkeycloak [38;5;5m04:15:35.21 [0m[38;5;2mINFO [0m ==> Subscribe to project updates by watching [1mhttps://github.com/bitnami/containers[0m
+[38;5;6mkeycloak [38;5;5m04:15:35.21 [0m[38;5;2mINFO [0m ==> Did you know there are enterprise versions of the Bitnami catalog? For enhanced secure software supply chain features, unlimited pulls from Docker, LTS support, or application customization, see Bitnami Premium or Tanzu Application Catalog. See https://www.arrow.com/globalecs/na/vendors/bitnami/ for more information.
+[38;5;6mkeycloak [38;5;5m04:15:35.21 [0m[38;5;2mINFO [0m ==> 
+[38;5;6mkeycloak [38;5;5m04:15:35.21 [0m[38;5;2mINFO [0m ==> ** Starting keycloak setup **
+[38;5;6mkeycloak [38;5;5m04:15:35.22 [0m[38;5;2mINFO [0m ==> Validating settings in KEYCLOAK_* env vars...
+[38;5;6mkeycloak [38;5;5m04:15:35.22 [0m[38;5;2mINFO [0m ==> Trying to connect to PostgreSQL server keycloak-postgresql...
+[38;5;6mkeycloak [38;5;5m04:15:35.23 [0m[38;5;2mINFO [0m ==> Found PostgreSQL server listening at keycloak-postgresql:5432
+[38;5;6mkeycloak [38;5;5m04:15:35.23 [0m[38;5;2mINFO [0m ==> Configuring database settings
+[38;5;6mkeycloak [38;5;5m04:15:35.24 [0m[38;5;2mINFO [0m ==> Enabling statistics
+[38;5;6mkeycloak [38;5;5m04:15:35.25 [0m[38;5;2mINFO [0m ==> Enabling health endpoints
+[38;5;6mkeycloak [38;5;5m04:15:35.25 [0m[38;5;2mINFO [0m ==> Configuring http settings
+[38;5;6mkeycloak [38;5;5m04:15:35.26 [0m[38;5;2mINFO [0m ==> Configuring hostname settings
+[38;5;6mkeycloak [38;5;5m04:15:35.26 [0m[38;5;2mINFO [0m ==> Configuring cache count
+[38;5;6mkeycloak [38;5;5m04:15:35.26 [0m[38;5;2mINFO [0m ==> Configuring log level
+[38;5;6mkeycloak [38;5;5m04:15:35.27 [0m[38;5;2mINFO [0m ==> ** keycloak setup finished! **
+
+[38;5;6mkeycloak [38;5;5m04:15:35.28 [0m[38;5;2mINFO [0m ==> ** Starting keycloak **
+Appending additional Java properties to JAVA_OPTS
+Updating the configuration and installing your custom providers, if any. Please wait.
+2025-03-27 04:15:40,329 WARN  [io.qua.config] (build-24) Unrecognized configuration key "quarkus.micrometer.enabled" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2025-03-27 04:15:40,329 WARN  [io.qua.config] (build-24) Unrecognized configuration key "quarkus.smallrye-health.extensions.enabled" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2025-03-27 04:15:42,738 WARN  [org.key.services] (build-9) KC-SERVICES0047: metrics (org.jboss.aerogear.keycloak.metrics.MetricsEndpointFactory) is implementing the internal SPI realm-restapi-extension. This SPI is internal and may change without notice
+2025-03-27 04:15:43,160 WARN  [org.key.services] (build-9) KC-SERVICES0047: custom-sync-authenticator (com.example.keycloak.ocb.CustomSyncAuthenticatorFactory) is implementing the internal SPI authenticator. This SPI is internal and may change without notice
+2025-03-27 04:15:43,728 WARN  [org.key.services] (build-9) KC-SERVICES0047: metrics-listener (org.jboss.aerogear.keycloak.metrics.MetricsEventListenerFactory) is implementing the internal SPI eventsListener. This SPI is internal and may change without notice
+2025-03-27 04:15:44,665 INFO  [io.qua.hib.orm.dep.HibernateOrmProcessor] (build-38) A legacy persistence.xml file is present in the classpath. This file will be used to configure JPA/Hibernate ORM persistence units, and any configuration of the Hibernate ORM extension will be ignored. To ignore persistence.xml files instead, set the configuration property 'quarkus.hibernate-orm.persistence-xml.ignore' to 'true'.
+2025-03-27 04:15:55,864 INFO  [io.qua.dep.QuarkusAugmentor] (main) Quarkus augmentation completed in 17799ms
+Running the server in development mode. DO NOT use this configuration in production.
+2025-03-27 04:16:01,132 INFO  [org.keycloak.quarkus.runtime.storage.infinispan.CacheManagerFactory] (Thread-5) Starting Infinispan embedded cache manager
+2025-03-27 04:16:01,829 INFO  [org.infinispan.CONTAINER] (Thread-5) ISPN000556: Starting user marshaller 'org.infinispan.commons.marshall.ImmutableProtoStreamMarshaller'
+2025-03-27 04:16:02,268 INFO  [org.infinispan.CLUSTER] (Thread-5) ISPN000078: Starting JGroups channel `ISPN` with stack `kubernetes`
+2025-03-27 04:16:02,328 INFO  [org.jgroups.JChannel] (Thread-5) local_addr: c8b5b816-5a26-4cc1-8717-5cec0dcba0cc, name: keycloak-0-64801
+2025-03-27 04:16:02,333 INFO  [org.jgroups.protocols.FD_SOCK2] (Thread-5) server listening on *:57800
+2025-03-27 04:16:04,360 INFO  [org.jgroups.protocols.pbcast.GMS] (Thread-5) keycloak-0-64801: no members discovered after 2001 ms: creating cluster as coordinator
+2025-03-27 04:16:04,390 INFO  [org.infinispan.CLUSTER] (Thread-5) ISPN000094: Received new cluster view for channel ISPN: [keycloak-0-64801|0] (1) [keycloak-0-64801]
+2025-03-27 04:16:04,476 INFO  [org.infinispan.CLUSTER] (Thread-5) ISPN000079: Channel `ISPN` local address is `keycloak-0-64801`, physical addresses are `[10.244.12.232:7800]`
+2025-03-27 04:16:04,968 INFO  [org.keycloak.connections.infinispan.DefaultInfinispanConnectionProviderFactory] (main) Node name: keycloak-0-64801, Site name: null
+2025-03-27 04:16:04,973 INFO  [org.keycloak.broker.provider.AbstractIdentityProviderMapper] (main) Registering class org.keycloak.broker.provider.mappersync.ConfigSyncEventListener
+2025-03-27 04:16:06,382 WARN  [io.agroal.pool] (main) Datasource '<default>': JDBC resources leaked: 3 ResultSet(s) and 0 Statement(s)
+2025-03-27 04:16:06,587 INFO  [io.quarkus] (main) Keycloak 26.1.4 on JVM (powered by Quarkus 3.15.3.1) started in 10.543s. Listening on: http://0.0.0.0:8080
+2025-03-27 04:16:06,587 INFO  [io.quarkus] (main) Profile dev activated. 
+2025-03-27 04:16:06,587 INFO  [io.quarkus] (main) Installed features: [agroal, cdi, hibernate-orm, jdbc-postgresql, keycloak, narayana-jta, opentelemetry, reactive-routes, rest, rest-jackson, smallrye-context-propagation, vertx]
+2025-03-27 04:16:21,532 WARN  [org.keycloak.events] (executor-thread-1) type="LOGIN_ERROR", realmId="7edb3942-0d14-40e1-8a72-2875f1b8059d", realmName="multi-tenant-realm", clientId="account-console", userId="null", ipAddress="10.244.0.1", error="expired_code", restart_after_timeout="true"
+2025-03-27 04:16:25,087 WARN  [org.keycloak.services] (executor-thread-1) KC-SERVICES0013: Failed authentication: java.lang.NullPointerException: Cannot invoke "org.keycloak.authentication.FlowStatus.ordinal()" because "status" is null
+	at org.keycloak.authentication.DefaultAuthenticationFlow.processResult(DefaultAuthenticationFlow.java:504)
+	at org.keycloak.authentication.DefaultAuthenticationFlow.processAction(DefaultAuthenticationFlow.java:150)
+	at org.keycloak.authentication.AuthenticationProcessor.authenticationAction(AuthenticationProcessor.java:1039)
+	at org.keycloak.services.resources.LoginActionsService.processFlow(LoginActionsService.java:378)
+	at org.keycloak.services.resources.LoginActionsService.processAuthentication(LoginActionsService.java:349)
+	at org.keycloak.services.resources.LoginActionsService.authenticate(LoginActionsService.java:341)
+	at org.keycloak.services.resources.LoginActionsService.authenticateForm(LoginActionsService.java:407)
+	at org.keycloak.services.resources.LoginActionsService$quarkusrestinvoker$authenticateForm_13d428b70e62601585246c086a52f40868a3208e.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:141)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$14.runWith(VertxCoreRecorder.java:635)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2516)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2495)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1521)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+
+2025-03-27 04:16:25,089 WARN  [org.keycloak.events] (executor-thread-1) type="LOGIN_ERROR", realmId="7edb3942-0d14-40e1-8a72-2875f1b8059d", realmName="multi-tenant-realm", clientId="account-console", userId="null", ipAddress="10.244.0.1", error="invalid_user_credentials", auth_method="openid-connect", redirect_uri="http://127.0.0.1:54643/realms/multi-tenant-realm/account", code_id="40e519da-c9ff-4a5c-be71-001171c89d88"
+2025-03-27 04:16:43,619 WARN  [org.keycloak.services] (executor-thread-6) KC-SERVICES0013: Failed authentication: java.lang.NullPointerException: Cannot invoke "org.keycloak.authentication.FlowStatus.ordinal()" because "status" is null
+	at org.keycloak.authentication.DefaultAuthenticationFlow.processResult(DefaultAuthenticationFlow.java:504)
+	at org.keycloak.authentication.DefaultAuthenticationFlow.processAction(DefaultAuthenticationFlow.java:150)
+	at org.keycloak.authentication.AuthenticationProcessor.authenticationAction(AuthenticationProcessor.java:1039)
+	at org.keycloak.services.resources.LoginActionsService.processFlow(LoginActionsService.java:378)
+	at org.keycloak.services.resources.LoginActionsService.processAuthentication(LoginActionsService.java:349)
+	at org.keycloak.services.resources.LoginActionsService.authenticate(LoginActionsService.java:341)
+	at org.keycloak.services.resources.LoginActionsService.authenticateForm(LoginActionsService.java:407)
+	at org.keycloak.services.resources.LoginActionsService$quarkusrestinvoker$authenticateForm_13d428b70e62601585246c086a52f40868a3208e.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:141)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$14.runWith(VertxCoreRecorder.java:635)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2516)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2495)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1521)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+
+2025-03-27 04:16:43,621 WARN  [org.keycloak.events] (executor-thread-6) type="LOGIN_ERROR", realmId="7edb3942-0d14-40e1-8a72-2875f1b8059d", realmName="multi-tenant-realm", clientId="account-console", userId="null", ipAddress="10.244.0.1", error="invalid_user_credentials", auth_method="openid-connect", redirect_uri="http://127.0.0.1:54643/realms/multi-tenant-realm/account", code_id="40e519da-c9ff-4a5c-be71-001171c89d88"
