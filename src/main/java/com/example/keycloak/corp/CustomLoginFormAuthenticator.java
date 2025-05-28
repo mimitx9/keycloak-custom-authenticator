@@ -44,60 +44,42 @@ public class CustomLoginFormAuthenticator implements Authenticator {
 
         String legalId = formData.getFirst(LEGAL_ID_PARAM);
         String phone = formData.getFirst(PHONE_PARAM);
-
-        // Create identifier for retry logic
-        String identifier = legalId + "_" + phone;
-
-        // Check lockout status before attempting login
-        RetryLogicHandler.LockoutStatus lockoutStatus =
-                RetryLogicHandler.checkLockoutStatus(context, identifier, "login");
-
-        if (lockoutStatus.isLocked()) {
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("identifier", maskIdentifier(identifier));
-            errorData.put("remainingLockoutMs", lockoutStatus.getRemainingLockoutMs());
-            errorData.put("failedAttempts", lockoutStatus.getFailedAttempts());
-
-            Response challengeResponse = challenge(context, ResponseCodes.LOGIN_ACCOUNT_LOCKED, errorData);
-            context.challenge(challengeResponse);
-            return;
-        }
-
         String username = legalId + "_" + phone;
 
         UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
 
         if (user == null) {
             logger.warnf("User not found: %s", username);
-            RetryLogicHandler.LockoutResult lockoutResult =
-                    RetryLogicHandler.recordFailedAttempt(context, identifier, "login");
-
             context.getEvent().user((String) null);
             context.getEvent().error(Errors.USER_NOT_FOUND);
-
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("attemptCount", lockoutResult.getAttemptCount());
-            errorData.put("maxAttempts", lockoutResult.getMaxAttempts());
-            errorData.put("isLocked", lockoutResult.isLocked());
-            errorData.put("identifier", maskIdentifier(identifier));
-
-            if (lockoutResult.isLocked()) {
-                errorData.put("lockoutDurationMinutes", lockoutResult.getLockoutDurationMinutes());
-                errorData.put("lockoutUntil", lockoutResult.getLockoutUntil());
-            }
-
-            String errorCode = lockoutResult.isLocked() ? ResponseCodes.LOGIN_FAILED_LOCKED : ResponseCodes.LOGIN_FAILED;
-            Response challengeResponse = challenge(context, errorCode, errorData);
+            Response challengeResponse = challenge(context, ResponseCodes.USER_NOT_FOUND, null);
             context.challenge(challengeResponse);
             return;
         }
 
-        RetryLogicHandler.resetFailedAttempts(context, identifier, "login");
-
+        // Set user in context for lockout checking
         context.setUser(user);
+
+        // Check lockout status BEFORE attempting login
+        RetryLogicHandler.LockoutStatus lockoutStatus =
+                RetryLogicHandler.checkLockoutStatus(context, username, "login");
+
+        if (lockoutStatus.isLocked()) {
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("lockedAt", lockoutStatus.getLockedAt());
+            errorData.put("lockDuration", lockoutStatus.getLockDurationSeconds());
+
+            Response challengeResponse = challenge(context, ResponseCodes.LOGIN_ACCOUNT_LOCKED, errorData);
+            context.challenge(challengeResponse);
+            return;
+        }
+
+        RetryLogicHandler.resetFailedAttempts(context, username, "login");
+
+        // Store information in session for next step
         context.getAuthenticationSession().setAuthNote("legalId", legalId);
         context.getAuthenticationSession().setAuthNote("phone", phone);
-        context.getAuthenticationSession().setAuthNote("identifier", identifier);
+        context.getAuthenticationSession().setAuthNote("identifier", username);
 
         logger.infof("User %s passed login validation", username);
         context.success();
@@ -108,38 +90,17 @@ public class CustomLoginFormAuthenticator implements Authenticator {
         String phone = formData.getFirst(PHONE_PARAM);
 
         if (legalId == null || legalId.trim().isEmpty()) {
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("field", "legalId");
-            errorData.put("fieldName", "Legal ID");
-            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, errorData);
+            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, null);
             context.challenge(challengeResponse);
             return false;
         }
 
         if (phone == null || phone.trim().isEmpty()) {
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("field", "phone");
-            errorData.put("fieldName", "Số điện thoại");
-            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, errorData);
+            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, null);
             context.challenge(challengeResponse);
             return false;
         }
         return true;
-    }
-
-    private String maskIdentifier(String identifier) {
-        if (identifier == null || identifier.length() < 6) {
-            return identifier;
-        }
-        String[] parts = identifier.split("_");
-        if (parts.length == 2) {
-            String legalId = parts[0].length() > 3 ?
-                    parts[0].substring(0, 3) + "***" : parts[0];
-            String phone = parts[1].length() > 6 ?
-                    parts[1].substring(0, 3) + "****" + parts[1].substring(parts[1].length() - 3) : parts[1];
-            return legalId + "_" + phone;
-        }
-        return identifier.substring(0, 3) + "***";
     }
 
     protected Response challenge(AuthenticationFlowContext context, String responseCode, Map<String, Object> responseData) {

@@ -1,18 +1,29 @@
 package com.example.keycloak.util;
 
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.UserModel;
 import org.jboss.logging.Logger;
 
-import java.util.Map;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Utility class to handle retry logic and account lockout functionality
- * Implements the progressive lockout strategy as per business requirements
+ * Enhanced Retry Logic Handler with User Attributes and In-Memory Cache
+ * Uses custom user attributes: lockedAt, lockDuration
+ * Implements in-memory cache for performance optimization
  */
 public class RetryLogicHandler {
 
     private static final Logger logger = Logger.getLogger(RetryLogicHandler.class);
+
+    // Custom user attributes
+    private static final String LOCKED_AT_ATTR = "lockedAt";
+    private static final String LOCK_DURATION_ATTR = "lockDuration";
+    private static final String FAILED_ATTEMPTS_ATTR = "failedAttempts";
+    private static final String LAST_ATTEMPT_AT_ATTR = "lastAttemptAt";
 
     // Lockout durations in minutes based on attempt count
     private static final int[] LOCKOUT_DURATIONS = {
@@ -24,60 +35,83 @@ public class RetryLogicHandler {
             1440  // 6+ attempts - 24 hours (1440 minutes)
     };
 
-    private static final String FAILED_ATTEMPTS_SUFFIX = "_failed_count";
-    private static final String LAST_ATTEMPT_SUFFIX = "_last_attempt";
-    private static final String LOCKED_UNTIL_SUFFIX = "_locked_until";
-    private static final String RESET_TIME_SUFFIX = "_reset_time";
-
     // 24 hours in milliseconds for auto-reset
     private static final long AUTO_RESET_PERIOD = 24 * 60 * 60 * 1000L;
 
+    // In-memory cache for lockout status
+    private static final ConcurrentHashMap<String, CachedLockoutInfo> lockoutCache = new ConcurrentHashMap<>();
+    private static final ScheduledExecutorService cacheCleanupExecutor = Executors.newSingleThreadScheduledExecutor();
+
+    static {
+        // Clean up expired cache entries every 5 minutes
+        cacheCleanupExecutor.scheduleAtFixedRate(() -> {
+            long currentTime = System.currentTimeMillis();
+            lockoutCache.entrySet().removeIf(entry -> {
+                CachedLockoutInfo info = entry.getValue();
+                return currentTime > info.unlockTime || currentTime > info.cacheExpiry;
+            });
+        }, 5, 5, TimeUnit.MINUTES);
+    }
+
     /**
      * Records a failed attempt and determines if account should be locked
-     * @param context Authentication flow context
-     * @param identifier Unique identifier (e.g., legalId_phone)
-     * @param type Type of attempt (login, otp)
-     * @return LockoutResult containing lockout status and message
      */
     public static LockoutResult recordFailedAttempt(AuthenticationFlowContext context,
                                                     String identifier,
                                                     String type) {
-        String key = getFailedAttemptsKey(identifier, type);
+        UserModel user = context.getUser();
+        if (user == null) {
+            logger.warn("No user found in context for failed attempt recording");
+            return createUnlockedResult(1);
+        }
 
-        // Check if we need to reset due to 24-hour period
-        checkAndResetIfNeeded(context, key);
+        // Check if we need auto-reset (24 hours)
+        checkAndResetIfNeeded(user, type);
 
         // Get current failed attempts
-        int currentAttempts = getCurrentFailedAttempts(context, key);
+        int currentAttempts = getCurrentFailedAttempts(user, type);
         currentAttempts++;
 
-        // Store updated attempt count and timestamp
-        context.getAuthenticationSession().setUserSessionNote(key + FAILED_ATTEMPTS_SUFFIX, String.valueOf(currentAttempts));
-        context.getAuthenticationSession().setUserSessionNote(key + LAST_ATTEMPT_SUFFIX, String.valueOf(System.currentTimeMillis()));
+        // Update user attributes
+        user.setAttribute(FAILED_ATTEMPTS_ATTR + "_" + type, List.of(String.valueOf(currentAttempts)));
+        user.setAttribute(LAST_ATTEMPT_AT_ATTR + "_" + type, List.of(String.valueOf(System.currentTimeMillis())));
 
-        logger.warnf("Failed %s attempt #%d for identifier: %s", type, currentAttempts, identifier);
+        logger.warnf("Failed %s attempt #%d for user: %s", type, currentAttempts, user.getUsername());
 
         // Determine lockout duration
         int lockoutMinutes = getLockoutDuration(currentAttempts);
 
         LockoutResult result = new LockoutResult();
         result.setAttemptCount(currentAttempts);
-        result.setMaxAttempts(getMaxAttemptsBeforePermanentLock());
 
         if (lockoutMinutes > 0) {
-            long lockoutUntil = System.currentTimeMillis() + (lockoutMinutes * 60 * 1000L);
-            context.getAuthenticationSession().setAuthNote(key + LOCKED_UNTIL_SUFFIX, String.valueOf(lockoutUntil));
+            long lockedAt = System.currentTimeMillis();
+            int lockDurationSeconds = lockoutMinutes * 60;
+
+            // Store in user attributes
+            user.setAttribute(LOCKED_AT_ATTR + "_" + type, List.of(String.valueOf(lockedAt)));
+            user.setAttribute(LOCK_DURATION_ATTR + "_" + type, List.of(String.valueOf(lockDurationSeconds)));
+
+            // Update cache
+            String cacheKey = getCacheKey(user.getUsername(), type);
+            long unlockTime = lockedAt + (lockDurationSeconds * 1000L);
+            lockoutCache.put(cacheKey, new CachedLockoutInfo(
+                    lockedAt,
+                    lockDurationSeconds,
+                    unlockTime,
+                    System.currentTimeMillis() + (30 * 60 * 1000L) // Cache for 30 minutes
+            ));
 
             result.setLocked(true);
-            result.setLockoutDurationMinutes(lockoutMinutes);
-            result.setLockoutUntil(lockoutUntil);
-            result.setMessage(generateLockoutMessage(currentAttempts, lockoutMinutes));
+            result.setLockDurationSeconds(lockDurationSeconds);
+            result.setLockedAt(lockedAt);
 
-            logger.warnf("Account locked for identifier: %s, duration: %d minutes", identifier, lockoutMinutes);
+            logger.warnf("Account locked for user: %s, type: %s, duration: %d minutes",
+                    user.getUsername(), type, lockoutMinutes);
         } else {
             result.setLocked(false);
-            int remainingAttempts = getRemainingAttempts(currentAttempts);
-            result.setMessage(generateWarningMessage(currentAttempts, remainingAttempts));
+            // Remove from cache if exists
+            lockoutCache.remove(getCacheKey(user.getUsername(), type));
         }
 
         return result;
@@ -85,175 +119,199 @@ public class RetryLogicHandler {
 
     /**
      * Checks if an account is currently locked
-     * @param context Authentication flow context
-     * @param identifier Unique identifier
-     * @param type Type of attempt (login, otp)
-     * @return LockoutStatus with current lock information
+     * Uses cache first, then checks user attributes
      */
     public static LockoutStatus checkLockoutStatus(AuthenticationFlowContext context,
                                                    String identifier,
                                                    String type) {
-        String key = getFailedAttemptsKey(identifier, type);
-
-        // Check if we need to reset due to 24-hour period
-        checkAndResetIfNeeded(context, key);
-
-        String lockedUntilStr = context.getAuthenticationSession().getAuthNote(key + LOCKED_UNTIL_SUFFIX);
-
-        LockoutStatus status = new LockoutStatus();
-
-        if (lockedUntilStr != null) {
-            long lockedUntil = Long.parseLong(lockedUntilStr);
-            long currentTime = System.currentTimeMillis();
-
-            if (currentTime < lockedUntil) {
-                // Still locked
-                status.setLocked(true);
-                status.setRemainingLockoutMs(lockedUntil - currentTime);
-                status.setMessage(generateCurrentLockoutMessage(lockedUntil - currentTime));
-            } else {
-                // Lock expired, but don't reset failed attempts yet
-                status.setLocked(false);
-                status.setMessage("Thời gian khóa đã hết. Bạn có thể thử lại.");
-
-                // Remove lockout timestamp but keep failed attempts count
-                context.getAuthenticationSession().removeAuthNote(key + LOCKED_UNTIL_SUFFIX);
+        UserModel user = context.getUser();
+        if (user == null) {
+            // For login step, user might not be set yet, try to find by identifier
+            if ("login".equals(type) && identifier != null) {
+                user = context.getSession().users().getUserByUsername(context.getRealm(), identifier);
             }
-        } else {
-            status.setLocked(false);
+
+            if (user == null) {
+                return createUnlockedStatus();
+            }
         }
 
-        status.setFailedAttempts(getCurrentFailedAttempts(context, key));
-        return status;
+        String cacheKey = getCacheKey(user.getUsername(), type);
+
+        // Check cache first
+        CachedLockoutInfo cachedInfo = lockoutCache.get(cacheKey);
+        long currentTime = System.currentTimeMillis();
+
+        if (cachedInfo != null && currentTime < cachedInfo.cacheExpiry) {
+            if (currentTime < cachedInfo.unlockTime) {
+                // Still locked according to cache
+                return createLockedStatus(cachedInfo, currentTime);
+            } else {
+                // Cache says unlocked, but verify with user attributes
+                lockoutCache.remove(cacheKey);
+            }
+        }
+
+        // Check user attributes
+        List<String> lockedAtList = user.getAttributes().get(LOCKED_AT_ATTR + "_" + type);
+        if (lockedAtList == null || lockedAtList.isEmpty()) {
+            // No lockedAt attribute = unlocked
+            return createUnlockedStatus();
+        }
+
+        List<String> lockDurationList = user.getAttributes().get(LOCK_DURATION_ATTR + "_" + type);
+        if (lockDurationList == null || lockDurationList.isEmpty()) {
+            // No lockDuration attribute = unlocked
+            user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
+            return createUnlockedStatus();
+        }
+
+        try {
+            long lockedAt = Long.parseLong(lockedAtList.get(0));
+            int lockDurationSeconds = Integer.parseInt(lockDurationList.get(0));
+            long unlockTime = lockedAt + (lockDurationSeconds * 1000L);
+
+            if (currentTime < unlockTime) {
+                // Still locked
+                // Update cache
+                lockoutCache.put(cacheKey, new CachedLockoutInfo(
+                        lockedAt,
+                        lockDurationSeconds,
+                        unlockTime,
+                        System.currentTimeMillis() + (30 * 60 * 1000L)
+                ));
+
+                LockoutStatus status = new LockoutStatus();
+                status.setLocked(true);
+                status.setRemainingLockoutMs(unlockTime - currentTime);
+                status.setLockDurationSeconds(lockDurationSeconds);
+                status.setLockedAt(lockedAt);
+                status.setFailedAttempts(getCurrentFailedAttempts(user, type));
+                return status;
+            } else {
+                // Lock expired - remove attributes but keep failed attempts
+                user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
+                user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
+                lockoutCache.remove(cacheKey);
+
+                LockoutStatus status = createUnlockedStatus();
+                status.setFailedAttempts(getCurrentFailedAttempts(user, type));
+                return status;
+            }
+        } catch (NumberFormatException e) {
+            logger.errorf("Invalid lockout data for user %s, type %s. Clearing attributes.",
+                    user.getUsername(), type);
+            user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
+            user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
+            return createUnlockedStatus();
+        }
     }
 
     /**
      * Resets failed attempts for successful authentication
-     * @param context Authentication flow context
-     * @param identifier Unique identifier
-     * @param type Type of attempt (login, otp)
      */
     public static void resetFailedAttempts(AuthenticationFlowContext context,
                                            String identifier,
                                            String type) {
-        String key = getFailedAttemptsKey(identifier, type);
+        UserModel user = context.getUser();
+        if (user == null) {
+            logger.warn("No user found in context for reset");
+            return;
+        }
 
-        context.getAuthenticationSession().removeAuthNote(key + FAILED_ATTEMPTS_SUFFIX);
-        context.getAuthenticationSession().removeAuthNote(key + LAST_ATTEMPT_SUFFIX);
-        context.getAuthenticationSession().removeAuthNote(key + LOCKED_UNTIL_SUFFIX);
-        context.getAuthenticationSession().removeAuthNote(key + RESET_TIME_SUFFIX);
+        // Remove all lockout and attempt attributes for this type
+        user.removeAttribute(FAILED_ATTEMPTS_ATTR + "_" + type);
+        user.removeAttribute(LAST_ATTEMPT_AT_ATTR + "_" + type);
+        user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
+        user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
 
-        logger.infof("Reset failed attempts for identifier: %s, type: %s", identifier, type);
+        // Remove from cache
+        lockoutCache.remove(getCacheKey(user.getUsername(), type));
+
+        logger.infof("Reset failed attempts for user: %s, type: %s", user.getUsername(), type);
     }
 
-    private static void checkAndResetIfNeeded(AuthenticationFlowContext context, String key) {
-        String resetTimeStr = context.getAuthenticationSession().getAuthNote(key + RESET_TIME_SUFFIX);
-        long currentTime = System.currentTimeMillis();
+    // Private helper methods
+    private static void checkAndResetIfNeeded(UserModel user, String type) {
+        List<String> lastAttemptList = user.getAttributes().get(LAST_ATTEMPT_AT_ATTR + "_" + type);
+        if (lastAttemptList == null || lastAttemptList.isEmpty()) {
+            return;
+        }
 
-        if (resetTimeStr == null) {
-            // First time, set reset time
-            context.getAuthenticationSession().setAuthNote(key + RESET_TIME_SUFFIX, String.valueOf(currentTime + AUTO_RESET_PERIOD));
-        } else {
-            long resetTime = Long.parseLong(resetTimeStr);
-            if (currentTime >= resetTime) {
-                // 24 hours passed, reset everything
-                logger.infof("Auto-resetting failed attempts after 24 hours for key: %s", key);
-                context.getAuthenticationSession().removeAuthNote(key + FAILED_ATTEMPTS_SUFFIX);
-                context.getAuthenticationSession().removeAuthNote(key + LAST_ATTEMPT_SUFFIX);
-                context.getAuthenticationSession().removeAuthNote(key + LOCKED_UNTIL_SUFFIX);
-                context.getAuthenticationSession().setAuthNote(key + RESET_TIME_SUFFIX, String.valueOf(currentTime + AUTO_RESET_PERIOD));
+        try {
+            long lastAttempt = Long.parseLong(lastAttemptList.get(0));
+            long currentTime = System.currentTimeMillis();
+
+            if (currentTime - lastAttempt >= AUTO_RESET_PERIOD) {
+                // Auto-reset after 24 hours
+                logger.infof("Auto-resetting failed attempts after 24 hours for user: %s, type: %s",
+                        user.getUsername(), type);
+
+                user.removeAttribute(FAILED_ATTEMPTS_ATTR + "_" + type);
+                user.removeAttribute(LAST_ATTEMPT_AT_ATTR + "_" + type);
+                user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
+                user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
+                lockoutCache.remove(getCacheKey(user.getUsername(), type));
             }
+        } catch (NumberFormatException e) {
+            logger.errorf("Invalid lastAttemptAt data for user %s, type %s", user.getUsername(), type);
         }
     }
 
-    private static int getCurrentFailedAttempts(AuthenticationFlowContext context, String key) {
-        String countStr = context.getAuthenticationSession().getAuthNote(key + FAILED_ATTEMPTS_SUFFIX);
-        return countStr != null ? Integer.parseInt(countStr) : 0;
+    private static int getCurrentFailedAttempts(UserModel user, String type) {
+        List<String> attemptsList = user.getAttributes().get(FAILED_ATTEMPTS_ATTR + "_" + type);
+        if (attemptsList == null || attemptsList.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(attemptsList.get(0));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
-    private static String getFailedAttemptsKey(String identifier, String type) {
-        return type + "_failed_" + identifier;
+    private static String getCacheKey(String username, String type) {
+        return type + "_" + username;
     }
 
     private static int getLockoutDuration(int attemptCount) {
         if (attemptCount <= 2) {
-            return 0; // No lockout for first 2 attempts
+            return 0;
         } else if (attemptCount >= 6) {
-            return LOCKOUT_DURATIONS[5]; // 24 hours for 6+ attempts
+            return LOCKOUT_DURATIONS[5];
         } else {
             return LOCKOUT_DURATIONS[attemptCount - 1];
         }
     }
 
-    private static int getRemainingAttempts(int currentAttempts) {
-        return Math.max(0, 3 - currentAttempts); // 3 free attempts before first lockout
+    private static LockoutResult createUnlockedResult(int attemptCount) {
+        LockoutResult result = new LockoutResult();
+        result.setLocked(false);
+        result.setAttemptCount(attemptCount);
+        return result;
     }
 
-    private static int getMaxAttemptsBeforePermanentLock() {
-        return 6; // After 6 attempts, lockout is 24 hours
+    private static LockoutStatus createUnlockedStatus() {
+        LockoutStatus status = new LockoutStatus();
+        status.setLocked(false);
+        return status;
     }
 
-    private static String generateLockoutMessage(int attemptCount, int lockoutMinutes) {
-        String timeDesc;
-        if (lockoutMinutes >= 1440) {
-            timeDesc = "24 giờ";
-        } else if (lockoutMinutes >= 60) {
-            int hours = lockoutMinutes / 60;
-            timeDesc = hours + " giờ";
-        } else {
-            timeDesc = lockoutMinutes + " phút";
-        }
-
-        return String.format(
-                "Tài khoản của Quý khách bị khóa do nhập sai thông tin nhiều lần. " +
-                        "Tài khoản sẽ tự động mở lại sau %s. " +
-                        "Quý khách có thể truy cập tại đây [Link mở khóa] để yêu cầu mở khóa. " +
-                        "Vui lòng liên hệ VPBank SME gần nhất nếu cần hỗ trợ.\n" +
-                        "Danh sách Trung tâm VPBank SME: Xem tại đây\n" +
-                        "Tổng đài hỗ trợ: 1900 234 568 #2",
-                timeDesc
-        );
-    }
-
-    private static String generateWarningMessage(int attemptCount, int remainingAttempts) {
-        if (remainingAttempts <= 0) {
-            return "Thông tin đăng nhập không chính xác.";
-        }
-
-        if (remainingAttempts == 1) {
-            return "Thông tin đăng nhập không chính xác. Bạn còn 1 lần thử nữa trước khi tài khoản bị khóa.";
-        }
-
-        return String.format("Thông tin đăng nhập không chính xác. Bạn còn %d lần thử nữa.", remainingAttempts);
-    }
-
-    private static String generateCurrentLockoutMessage(long remainingMs) {
-        long remainingMinutes = remainingMs / (60 * 1000);
-        long remainingHours = remainingMinutes / 60;
-
-        String timeDesc;
-        if (remainingHours > 0) {
-            timeDesc = remainingHours + " giờ " + (remainingMinutes % 60) + " phút";
-        } else {
-            timeDesc = remainingMinutes + " phút";
-        }
-
-        return String.format(
-                "Tài khoản của Quý khách đang bị khóa. Vui lòng thử lại sau %s.\n" +
-                        "Danh sách Trung tâm VPBank SME: Xem tại đây\n" +
-                        "Tổng đài hỗ trợ: 1900 234 568 #2",
-                timeDesc
-        );
+    private static LockoutStatus createLockedStatus(CachedLockoutInfo cachedInfo, long currentTime) {
+        LockoutStatus status = new LockoutStatus();
+        status.setLocked(true);
+        status.setRemainingLockoutMs(cachedInfo.unlockTime - currentTime);
+        status.setLockDurationSeconds(cachedInfo.lockDurationSeconds);
+        status.setLockedAt(cachedInfo.lockedAt);
+        return status;
     }
 
     // Helper classes
     public static class LockoutResult {
         private boolean locked;
         private int attemptCount;
-        private int maxAttempts;
-        private int lockoutDurationMinutes;
-        private long lockoutUntil;
-        private String message;
+        private int lockDurationSeconds;
+        private long lockedAt;
 
         // Getters and setters
         public boolean isLocked() { return locked; }
@@ -262,24 +320,19 @@ public class RetryLogicHandler {
         public int getAttemptCount() { return attemptCount; }
         public void setAttemptCount(int attemptCount) { this.attemptCount = attemptCount; }
 
-        public int getMaxAttempts() { return maxAttempts; }
-        public void setMaxAttempts(int maxAttempts) { this.maxAttempts = maxAttempts; }
+        public int getLockDurationSeconds() { return lockDurationSeconds; }
+        public void setLockDurationSeconds(int lockDurationSeconds) { this.lockDurationSeconds = lockDurationSeconds; }
 
-        public int getLockoutDurationMinutes() { return lockoutDurationMinutes; }
-        public void setLockoutDurationMinutes(int lockoutDurationMinutes) { this.lockoutDurationMinutes = lockoutDurationMinutes; }
-
-        public long getLockoutUntil() { return lockoutUntil; }
-        public void setLockoutUntil(long lockoutUntil) { this.lockoutUntil = lockoutUntil; }
-
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
+        public long getLockedAt() { return lockedAt; }
+        public void setLockedAt(long lockedAt) { this.lockedAt = lockedAt; }
     }
 
     public static class LockoutStatus {
         private boolean locked;
         private int failedAttempts;
         private long remainingLockoutMs;
-        private String message;
+        private int lockDurationSeconds;
+        private long lockedAt;
 
         // Getters and setters
         public boolean isLocked() { return locked; }
@@ -291,7 +344,38 @@ public class RetryLogicHandler {
         public long getRemainingLockoutMs() { return remainingLockoutMs; }
         public void setRemainingLockoutMs(long remainingLockoutMs) { this.remainingLockoutMs = remainingLockoutMs; }
 
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
+        public int getLockDurationSeconds() { return lockDurationSeconds; }
+        public void setLockDurationSeconds(int lockDurationSeconds) { this.lockDurationSeconds = lockDurationSeconds; }
+
+        public long getLockedAt() { return lockedAt; }
+        public void setLockedAt(long lockedAt) { this.lockedAt = lockedAt; }
+    }
+
+    // Cache data structure
+    private static class CachedLockoutInfo {
+        final long lockedAt;
+        final int lockDurationSeconds;
+        final long unlockTime;
+        final long cacheExpiry;
+
+        CachedLockoutInfo(long lockedAt, int lockDurationSeconds, long unlockTime, long cacheExpiry) {
+            this.lockedAt = lockedAt;
+            this.lockDurationSeconds = lockDurationSeconds;
+            this.unlockTime = unlockTime;
+            this.cacheExpiry = cacheExpiry;
+        }
+    }
+
+    // Cleanup method for graceful shutdown
+    public static void shutdown() {
+        cacheCleanupExecutor.shutdown();
+        try {
+            if (!cacheCleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                cacheCleanupExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            cacheCleanupExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

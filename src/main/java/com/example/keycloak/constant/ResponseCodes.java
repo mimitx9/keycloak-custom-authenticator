@@ -8,6 +8,7 @@ public final class ResponseCodes {
     private ResponseCodes() {
     }
 
+    public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String FIELD_REQUIRED = "FIELD_REQUIRED";
     public static final String NETWORK_ERROR = "NETWORK_ERROR";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
