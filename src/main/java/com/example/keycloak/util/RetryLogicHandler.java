@@ -10,40 +10,31 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Enhanced Retry Logic Handler with User Attributes and In-Memory Cache
- * Uses custom user attributes: lockedAt, lockDuration
- * Implements in-memory cache for performance optimization
- */
+
 public class RetryLogicHandler {
 
     private static final Logger logger = Logger.getLogger(RetryLogicHandler.class);
 
-    // Custom user attributes
     private static final String LOCKED_AT_ATTR = "lockedAt";
     private static final String LOCK_DURATION_ATTR = "lockDuration";
     private static final String FAILED_ATTEMPTS_ATTR = "failedAttempts";
     private static final String LAST_ATTEMPT_AT_ATTR = "lastAttemptAt";
 
-    // Lockout durations in minutes based on attempt count
     private static final int[] LOCKOUT_DURATIONS = {
-            0,    // 1st attempt - no lockout
-            0,    // 2nd attempt - no lockout
-            5,    // 3rd attempt - 5 minutes
-            10,   // 4th attempt - 10 minutes
-            20,   // 5th attempt - 20 minutes
-            1440  // 6+ attempts - 24 hours (1440 minutes)
+            0,    // 1st no lockout
+            0,    // 2nd no lockout
+            5,    // 3rd 5 minutes
+            10,   // 4th 10 minutes
+            20,   // 5th 20 minutes
+            1440  // 6+  24 hours (1440 minutes)
     };
 
-    // 24 hours in milliseconds for auto-reset
     private static final long AUTO_RESET_PERIOD = 24 * 60 * 60 * 1000L;
 
-    // In-memory cache for lockout status
     private static final ConcurrentHashMap<String, CachedLockoutInfo> lockoutCache = new ConcurrentHashMap<>();
     private static final ScheduledExecutorService cacheCleanupExecutor = Executors.newSingleThreadScheduledExecutor();
 
     static {
-        // Clean up expired cache entries every 5 minutes
         cacheCleanupExecutor.scheduleAtFixedRate(() -> {
             long currentTime = System.currentTimeMillis();
             lockoutCache.entrySet().removeIf(entry -> {
@@ -53,9 +44,7 @@ public class RetryLogicHandler {
         }, 5, 5, TimeUnit.MINUTES);
     }
 
-    /**
-     * Records a failed attempt and determines if account should be locked
-     */
+
     public static LockoutResult recordFailedAttempt(AuthenticationFlowContext context,
                                                     String identifier,
                                                     String type) {
@@ -65,20 +54,16 @@ public class RetryLogicHandler {
             return createUnlockedResult(1);
         }
 
-        // Check if we need auto-reset (24 hours)
         checkAndResetIfNeeded(user, type);
 
-        // Get current failed attempts
         int currentAttempts = getCurrentFailedAttempts(user, type);
         currentAttempts++;
 
-        // Update user attributes
         user.setAttribute(FAILED_ATTEMPTS_ATTR + "_" + type, List.of(String.valueOf(currentAttempts)));
         user.setAttribute(LAST_ATTEMPT_AT_ATTR + "_" + type, List.of(String.valueOf(System.currentTimeMillis())));
 
         logger.warnf("Failed %s attempt #%d for user: %s", type, currentAttempts, user.getUsername());
 
-        // Determine lockout duration
         int lockoutMinutes = getLockoutDuration(currentAttempts);
 
         LockoutResult result = new LockoutResult();
@@ -88,11 +73,9 @@ public class RetryLogicHandler {
             long lockedAt = System.currentTimeMillis();
             int lockDurationSeconds = lockoutMinutes * 60;
 
-            // Store in user attributes
             user.setAttribute(LOCKED_AT_ATTR + "_" + type, List.of(String.valueOf(lockedAt)));
             user.setAttribute(LOCK_DURATION_ATTR + "_" + type, List.of(String.valueOf(lockDurationSeconds)));
 
-            // Update cache
             String cacheKey = getCacheKey(user.getUsername(), type);
             long unlockTime = lockedAt + (lockDurationSeconds * 1000L);
             lockoutCache.put(cacheKey, new CachedLockoutInfo(
@@ -110,23 +93,17 @@ public class RetryLogicHandler {
                     user.getUsername(), type, lockoutMinutes);
         } else {
             result.setLocked(false);
-            // Remove from cache if exists
             lockoutCache.remove(getCacheKey(user.getUsername(), type));
         }
 
         return result;
     }
 
-    /**
-     * Checks if an account is currently locked
-     * Uses cache first, then checks user attributes
-     */
     public static LockoutStatus checkLockoutStatus(AuthenticationFlowContext context,
                                                    String identifier,
                                                    String type) {
         UserModel user = context.getUser();
         if (user == null) {
-            // For login step, user might not be set yet, try to find by identifier
             if ("login".equals(type) && identifier != null) {
                 user = context.getSession().users().getUserByUsername(context.getRealm(), identifier);
             }
@@ -138,21 +115,17 @@ public class RetryLogicHandler {
 
         String cacheKey = getCacheKey(user.getUsername(), type);
 
-        // Check cache first
         CachedLockoutInfo cachedInfo = lockoutCache.get(cacheKey);
         long currentTime = System.currentTimeMillis();
 
         if (cachedInfo != null && currentTime < cachedInfo.cacheExpiry) {
             if (currentTime < cachedInfo.unlockTime) {
-                // Still locked according to cache
                 return createLockedStatus(cachedInfo, currentTime);
             } else {
-                // Cache says unlocked, but verify with user attributes
                 lockoutCache.remove(cacheKey);
             }
         }
 
-        // Check user attributes
         List<String> lockedAtList = user.getAttributes().get(LOCKED_AT_ATTR + "_" + type);
         if (lockedAtList == null || lockedAtList.isEmpty()) {
             // No lockedAt attribute = unlocked
@@ -161,7 +134,6 @@ public class RetryLogicHandler {
 
         List<String> lockDurationList = user.getAttributes().get(LOCK_DURATION_ATTR + "_" + type);
         if (lockDurationList == null || lockDurationList.isEmpty()) {
-            // No lockDuration attribute = unlocked
             user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
             return createUnlockedStatus();
         }
@@ -172,8 +144,6 @@ public class RetryLogicHandler {
             long unlockTime = lockedAt + (lockDurationSeconds * 1000L);
 
             if (currentTime < unlockTime) {
-                // Still locked
-                // Update cache
                 lockoutCache.put(cacheKey, new CachedLockoutInfo(
                         lockedAt,
                         lockDurationSeconds,
@@ -189,7 +159,6 @@ public class RetryLogicHandler {
                 status.setFailedAttempts(getCurrentFailedAttempts(user, type));
                 return status;
             } else {
-                // Lock expired - remove attributes but keep failed attempts
                 user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
                 user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
                 lockoutCache.remove(cacheKey);
@@ -207,9 +176,6 @@ public class RetryLogicHandler {
         }
     }
 
-    /**
-     * Resets failed attempts for successful authentication
-     */
     public static void resetFailedAttempts(AuthenticationFlowContext context,
                                            String identifier,
                                            String type) {
@@ -225,13 +191,11 @@ public class RetryLogicHandler {
         user.removeAttribute(LOCKED_AT_ATTR + "_" + type);
         user.removeAttribute(LOCK_DURATION_ATTR + "_" + type);
 
-        // Remove from cache
         lockoutCache.remove(getCacheKey(user.getUsername(), type));
 
         logger.infof("Reset failed attempts for user: %s, type: %s", user.getUsername(), type);
     }
 
-    // Private helper methods
     private static void checkAndResetIfNeeded(UserModel user, String type) {
         List<String> lastAttemptList = user.getAttributes().get(LAST_ATTEMPT_AT_ATTR + "_" + type);
         if (lastAttemptList == null || lastAttemptList.isEmpty()) {
@@ -243,7 +207,6 @@ public class RetryLogicHandler {
             long currentTime = System.currentTimeMillis();
 
             if (currentTime - lastAttempt >= AUTO_RESET_PERIOD) {
-                // Auto-reset after 24 hours
                 logger.infof("Auto-resetting failed attempts after 24 hours for user: %s, type: %s",
                         user.getUsername(), type);
 
@@ -306,14 +269,12 @@ public class RetryLogicHandler {
         return status;
     }
 
-    // Helper classes
     public static class LockoutResult {
         private boolean locked;
         private int attemptCount;
         private int lockDurationSeconds;
         private long lockedAt;
 
-        // Getters and setters
         public boolean isLocked() { return locked; }
         public void setLocked(boolean locked) { this.locked = locked; }
 
@@ -351,7 +312,6 @@ public class RetryLogicHandler {
         public void setLockedAt(long lockedAt) { this.lockedAt = lockedAt; }
     }
 
-    // Cache data structure
     private static class CachedLockoutInfo {
         final long lockedAt;
         final int lockDurationSeconds;
@@ -366,7 +326,6 @@ public class RetryLogicHandler {
         }
     }
 
-    // Cleanup method for graceful shutdown
     public static void shutdown() {
         cacheCleanupExecutor.shutdown();
         try {

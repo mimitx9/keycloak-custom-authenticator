@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class CustomLoginFormAuthenticator implements Authenticator {
-
     private static final Logger logger = Logger.getLogger(CustomLoginFormAuthenticator.class);
     private static final String LEGAL_ID_PARAM = "legalId";
     private static final String PHONE_PARAM = "phone";

@@ -34,7 +34,7 @@ public class OTPAuthenticatorFactory implements AuthenticatorFactory, Configurab
 
     @Override
     public String getDisplayType() {
-        return "OTP SMS Authenticator";
+        return "OTP Bizconnect Authenticator";
     }
 
     @Override
@@ -63,7 +63,7 @@ public class OTPAuthenticatorFactory implements AuthenticatorFactory, Configurab
 
     @Override
     public String getHelpText() {
-        return "Send and verify OTP via SMS using external API service";
+        return "Send and verify OTP using external API service - BizConnect";
     }
 
     @Override

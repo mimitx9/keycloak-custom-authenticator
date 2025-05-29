@@ -17,12 +17,12 @@ public class CustomLoginFormAuthenticatorFactory implements AuthenticatorFactory
 
     @Override
     public String getDisplayType() {
-        return "Custom Login Form";
+        return "Custom Login Biz Connect Form";
     }
 
     @Override
     public String getReferenceCategory() {
-        return "Custom Login";
+        return "form";
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.example.keycloak.corp;
 
 import com.example.keycloak.constant.ResponseCodes;
+import com.example.keycloak.util.ResponseMessageHandler;
 import com.example.keycloak.util.RetryLogicHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,7 +51,6 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
-        // Make sure user is set in context
         UserModel user = context.getUser();
         if (user == null) {
             logger.error("No user found in context for OTP authentication");
@@ -58,27 +58,33 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
-        // Check lockout status using retry handler
         RetryLogicHandler.LockoutStatus lockoutStatus =
                 RetryLogicHandler.checkLockoutStatus(context, identifier, "otp");
 
         if (lockoutStatus.isLocked()) {
-            Map<String, Object> responseData = new HashMap<>();
-            responseData.put("lockedAt", lockoutStatus.getLockedAt());
-            responseData.put("lockDuration", lockoutStatus.getLockDurationSeconds());
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPLockoutResponse(
+                    lockoutStatus.getLockedAt(),
+                    lockoutStatus.getLockDurationSeconds(),
+                    lockoutStatus.getFailedAttempts()
+            );
 
             Response challengeResponse = challenge(context, ResponseCodes.OTP_ACCOUNT_LOCKED, responseData);
             context.challenge(challengeResponse);
             return;
         }
 
-        // Check OTP resend cooldown
         if (!canResendOTP(user)) {
             long remainingSeconds = getResendCoolDownRemaining(user);
-            Map<String, Object> responseData = new HashMap<>();
-            responseData.put("cooldownSeconds", remainingSeconds);
+            Map<String, Object> responseData = ResponseMessageHandler.createResendCooldownResponse(remainingSeconds);
 
             Response challengeResponse = challenge(context, ResponseCodes.OTP_RESEND_COOLDOWN, responseData);
+            context.challenge(challengeResponse);
+            return;
+        }
+
+        if (!canRequestOTP(user)) {
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPRequestLimitResponse();
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_REQUEST_LIMIT_EXCEEDED, responseData);
             context.challenge(challengeResponse);
             return;
         }
@@ -88,18 +94,21 @@ public class OTPAuthenticator implements Authenticator {
 
             boolean otpSent = sendOTP(context, otpSession, phone);
             if (!otpSent) {
-                Response challengeResponse = challenge(context, ResponseCodes.OTP_SEND_FAILED, null);
+                Map<String, Object> responseData = ResponseMessageHandler.createOTPSendFailedResponse();
+                Response challengeResponse = challenge(context, ResponseCodes.OTP_SEND_FAILED, responseData);
                 context.challenge(challengeResponse);
                 return;
             }
 
-            // Store OTP session info in user attributes
+            incrementOTPRequestCount(user);
+
             user.setAttribute("otpSession", List.of(otpSession));
             user.setAttribute("otpSentTime", List.of(String.valueOf(System.currentTimeMillis())));
 
-            logger.infof("OTP sent successfully to phone: %s with session: %s", maskPhone(phone), otpSession);
+            logger.infof("OTP sent successfully to phone: %s with session: %s", ResponseMessageHandler.maskPhone(phone), otpSession);
 
-            Response challengeResponse = challenge(context, ResponseCodes.OTP_SENT, null);
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPSentResponse(phone);
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_SENT, responseData);
             context.challenge(challengeResponse);
 
         } catch (Exception e) {
@@ -146,7 +155,6 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
-        // Get OTP session from user attributes
         List<String> otpSessionList = user.getAttributes().get("otpSession");
         if (otpSessionList == null || otpSessionList.isEmpty()) {
             logger.error("Missing OTP session in user attributes");
@@ -158,7 +166,6 @@ public class OTPAuthenticator implements Authenticator {
         try {
             boolean isValid = verifyOTP(context, otpSession, otp);
             if (isValid) {
-                // Reset failed attempts and cleanup OTP session
                 RetryLogicHandler.resetFailedAttempts(context, identifier, "otp");
                 user.removeAttribute("otpSession");
                 user.removeAttribute("otpSentTime");
@@ -166,19 +173,21 @@ public class OTPAuthenticator implements Authenticator {
                 logger.infof("OTP verification successful for user: %s", user.getUsername());
                 context.success();
             } else {
-                // Record failed attempt using retry handler
                 RetryLogicHandler.LockoutResult lockoutResult =
                         RetryLogicHandler.recordFailedAttempt(context, identifier, "otp");
 
                 if (lockoutResult.isLocked()) {
-                    Map<String, Object> responseData = new HashMap<>();
-                    responseData.put("lockedAt", lockoutResult.getLockedAt());
-                    responseData.put("lockDuration", lockoutResult.getLockDurationSeconds());
+                    Map<String, Object> responseData = ResponseMessageHandler.createOTPLockoutResponse(
+                            lockoutResult.getLockedAt(),
+                            lockoutResult.getLockDurationSeconds(),
+                            lockoutResult.getAttemptCount()
+                    );
 
                     Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID_LOCKED, responseData);
                     context.challenge(challengeResponse);
                 } else {
-                    Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID, null);
+                    Map<String, Object> responseData = ResponseMessageHandler.createOTPInvalidResponse();
+                    Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID, responseData);
                     context.challenge(challengeResponse);
                 }
             }
@@ -189,6 +198,62 @@ public class OTPAuthenticator implements Authenticator {
         }
     }
 
+    private void incrementOTPRequestCount(UserModel user) {
+        List<String> requestCountList = user.getAttributes().get("otpRequestCount");
+        int currentCount = 0;
+
+        if (requestCountList != null && !requestCountList.isEmpty()) {
+            try {
+                currentCount = Integer.parseInt(requestCountList.get(0));
+            } catch (NumberFormatException e) {
+                logger.warn("Invalid OTP request count format, resetting count", e);
+                user.removeAttribute("otpRequestCount");
+                user.removeAttribute("otpRequestResetTime");
+            }
+        }
+
+        currentCount++;
+        user.setAttribute("otpRequestCount", List.of(String.valueOf(currentCount)));
+
+        if (currentCount == 1) {
+            user.setAttribute("otpRequestResetTime", List.of(String.valueOf(System.currentTimeMillis())));
+        }
+    }
+
+    private boolean canRequestOTP(UserModel user) {
+        List<String> requestCountList = user.getAttributes().get("otpRequestCount");
+        List<String> requestResetTimeList = user.getAttributes().get("otpRequestResetTime");
+
+        long currentTime = System.currentTimeMillis();
+        long oneHourMs = 60 * 60 * 1000L;
+
+        if (requestResetTimeList != null && !requestResetTimeList.isEmpty()) {
+            try {
+                long resetTime = Long.parseLong(requestResetTimeList.get(0));
+                if (currentTime - resetTime >= oneHourMs) {
+                    user.removeAttribute("otpRequestCount");
+                    user.removeAttribute("otpRequestResetTime");
+                    return true;
+                }
+            } catch (NumberFormatException e) {
+                user.removeAttribute("otpRequestCount");
+                user.removeAttribute("otpRequestResetTime");
+                return true;
+            }
+        }
+
+        if (requestCountList != null && !requestCountList.isEmpty()) {
+            try {
+                int requestCount = Integer.parseInt(requestCountList.get(0));
+                return requestCount < 5; // Limit 5 requests per hour
+            } catch (NumberFormatException e) {
+                return true;
+            }
+        }
+
+        return true;
+    }
+
     private boolean canResendOTP(UserModel user) {
         List<String> sentTimeList = user.getAttributes().get("otpSentTime");
         if (sentTimeList == null || sentTimeList.isEmpty()) {
@@ -197,7 +262,7 @@ public class OTPAuthenticator implements Authenticator {
 
         try {
             long lastSent = Long.parseLong(sentTimeList.get(0));
-            long coolDownMs = 30 * 1000L; // Default 30 seconds
+            long coolDownMs = 30 * 1000L;
             return (System.currentTimeMillis() - lastSent) >= coolDownMs;
         } catch (NumberFormatException e) {
             return true;
@@ -229,18 +294,17 @@ public class OTPAuthenticator implements Authenticator {
     private boolean sendOTP(AuthenticationFlowContext context, String otpSession, String phone) throws IOException, InterruptedException {
         AuthenticatorConfigModel config = context.getAuthenticatorConfig();
 
-        String requestBody = String.format("""
-                        {
-                            "OTPSession": "%s",
-                            "OTPMethod": "%s",
-                            "OTPReceiver": "%s",
-                            "OTPLen": "%s",
-                            "OTPType": "%s",
-                            "brRequestID": "%s",
-                            "OTPRequestor": "%s",
-                            "paramList": ["%s"]
-                        }
-                        """,
+        String requestBody = String.format(
+                "{\n" +
+                        "    \"OTPSession\": \"%s\",\n" +
+                        "    \"OTPMethod\": \"%s\",\n" +
+                        "    \"OTPReceiver\": \"%s\",\n" +
+                        "    \"OTPLen\": \"%s\",\n" +
+                        "    \"OTPType\": \"%s\",\n" +
+                        "    \"brRequestID\": \"%s\",\n" +
+                        "    \"OTPRequestor\": \"%s\",\n" +
+                        "    \"paramList\": [\"%s\"]\n" +
+                        "}",
                 otpSession,
                 getConfigValue(config, OTPAuthenticatorFactory.OTP_METHOD, "1"),
                 phone,
@@ -277,13 +341,12 @@ public class OTPAuthenticator implements Authenticator {
     private boolean verifyOTP(AuthenticationFlowContext context, String otpSession, String otp) throws IOException, InterruptedException {
         AuthenticatorConfigModel config = context.getAuthenticatorConfig();
 
-        String requestBody = String.format("""
-                        {
-                            "OTPSession": "%s",
-                            "OTPNumber": "%s",
-                            "OTPRequestor": "%s"
-                        }
-                        """,
+        String requestBody = String.format(
+                "{\n" +
+                        "    \"OTPSession\": \"%s\",\n" +
+                        "    \"OTPNumber\": \"%s\",\n" +
+                        "    \"OTPRequestor\": \"%s\"\n" +
+                        "}",
                 otpSession,
                 otp,
                 getConfigValue(config, OTPAuthenticatorFactory.OTP_REQUESTOR, "ECM")
@@ -317,13 +380,6 @@ public class OTPAuthenticator implements Authenticator {
         return config.getConfig().getOrDefault(key, defaultValue);
     }
 
-    private String maskPhone(String phone) {
-        if (phone == null || phone.length() < 6) {
-            return phone;
-        }
-        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 3);
-    }
-
     protected Response challenge(AuthenticationFlowContext context, String responseCode, Map<String, Object> responseData) {
         LoginFormsProvider forms = context.form();
 
@@ -334,7 +390,7 @@ public class OTPAuthenticator implements Authenticator {
             }
         }
 
-        return forms.createForm("otp-form.ftl");
+        return forms.createForm("custom-otp-form.ftl");
     }
 
     @Override
