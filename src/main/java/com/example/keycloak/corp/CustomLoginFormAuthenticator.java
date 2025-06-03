@@ -6,6 +6,7 @@ import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.events.Errors;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -56,17 +57,15 @@ public class CustomLoginFormAuthenticator implements Authenticator {
             return;
         }
 
-        // Set user in context for lockout checking
         context.setUser(user);
 
-        // Check lockout status BEFORE attempting login
         RetryLogicHandler.LockoutStatus lockoutStatus =
                 RetryLogicHandler.checkLockoutStatus(context, username, "login");
 
         if (lockoutStatus.isLocked()) {
             Map<String, Object> errorData = new HashMap<>();
             errorData.put("lockedAt", lockoutStatus.getLockedAt());
-            errorData.put("lockDuration", lockoutStatus.getLockDurationSeconds());
+            errorData.put("lockDuration", lockoutStatus.getLockDuration());
 
             Response challengeResponse = challenge(context, ResponseCodes.LOGIN_ACCOUNT_LOCKED, errorData);
             context.challenge(challengeResponse);
@@ -75,7 +74,6 @@ public class CustomLoginFormAuthenticator implements Authenticator {
 
         RetryLogicHandler.resetFailedAttempts(context, username, "login");
 
-        // Store information in session for next step
         context.getAuthenticationSession().setAuthNote("legalId", legalId);
         context.getAuthenticationSession().setAuthNote("phone", phone);
         context.getAuthenticationSession().setAuthNote("identifier", username);
@@ -110,6 +108,15 @@ public class CustomLoginFormAuthenticator implements Authenticator {
                 forms.setAttribute("responseData", responseData);
             }
         }
+
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        if (config != null && config.getConfig() != null) {
+            String unlockUrl = config.getConfig().get("unlockUrl");
+            if (unlockUrl != null) {
+                forms.setAttribute("unlockUrl", unlockUrl);
+            }
+        }
+
         return forms.createForm("custom-login-form.ftl");
     }
 

@@ -1,5 +1,3 @@
-com.example.keycloak.corp.CustomTotpAuthenticatorFactory
-com.example.keycloak.corp.CccdPhoneAuthenticatorFactory
 com.example.keycloak.corp.CustomLoginFormAuthenticatorFactory
 com.example.keycloak.corp.OTPAuthenticatorFactory
 com.example.keycloak.ocb.auth.ExternalUserVerificationAuthenticatorFactory

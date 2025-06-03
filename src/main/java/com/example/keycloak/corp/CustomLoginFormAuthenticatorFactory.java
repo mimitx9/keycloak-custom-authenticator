@@ -9,6 +9,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class CustomLoginFormAuthenticatorFactory implements AuthenticatorFactory, ConfigurableAuthenticatorFactory {
@@ -16,8 +17,17 @@ public class CustomLoginFormAuthenticatorFactory implements AuthenticatorFactory
     public static final String PROVIDER_ID = "custom-login-form";
 
     @Override
+    public List<ProviderConfigProperty> getConfigProperties() {
+        return Arrays.asList(
+                new ProviderConfigProperty("unlockUrl", "Unlock URL",
+                        "URL for OTP unlock system", ProviderConfigProperty.STRING_TYPE,
+                        "http://10.37.0.197/doanh-nghiep/unlock-account")
+        );
+    }
+
+    @Override
     public String getDisplayType() {
-        return "Custom Login Biz Connect Form";
+        return "Custom Login Bizconnect Form";
     }
 
     @Override
@@ -46,11 +56,6 @@ public class CustomLoginFormAuthenticatorFactory implements AuthenticatorFactory
     @Override
     public String getHelpText() {
         return "Custom login form that validates Legal ID and Phone number";
-    }
-
-    @Override
-    public List<ProviderConfigProperty> getConfigProperties() {
-        return List.of();
     }
 
     @Override
