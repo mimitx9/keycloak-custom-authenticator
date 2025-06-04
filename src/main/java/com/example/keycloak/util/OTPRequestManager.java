@@ -52,7 +52,6 @@ public class OTPRequestManager {
     }
 
     public static void incrementOTPRequestCount(AuthenticationFlowContext context, UserModel user) {
-        // Try cache operation - if fails, just log and continue
         try {
             Cache<String, OTPRequestData> cache = getCache(context);
             String cacheKey = OTP_REQ_PREFIX + user.getUsername();
@@ -99,7 +98,6 @@ public class OTPRequestManager {
 
         } catch (Exception e) {
             logger.warnf("Cache error during resend check, allowing resend: %s", e.getMessage());
-            // When cache fails, allow the resend (bypass cooldown)
             return true;
         }
     }

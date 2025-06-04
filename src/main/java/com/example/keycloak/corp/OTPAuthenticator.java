@@ -308,7 +308,9 @@ public class OTPAuthenticator implements Authenticator {
                 forms.setAttribute("responseData", responseData);
             }
         }
-
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        String unlockUrl = getConfigValue(config, "unlockUrl", "http://10.37.0.197/doanh-nghiep/unlock-account");
+        forms.setAttribute("unlockUrl", unlockUrl);
         return forms.createForm("custom-otp-form.ftl");
     }
 
