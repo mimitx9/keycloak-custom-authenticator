@@ -1,6 +1,7 @@
 package com.example.keycloak.corp;
 
 import com.example.keycloak.constant.ResponseCodes;
+import com.example.keycloak.util.ResponseMessageHandler;
 import com.example.keycloak.util.RetryLogicHandler;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
@@ -63,9 +64,11 @@ public class CustomLoginFormAuthenticator implements Authenticator {
                 RetryLogicHandler.checkLockoutStatus(context, username, "login");
 
         if (lockoutStatus.isLocked()) {
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("lockedAt", lockoutStatus.getLockedAt());
-            errorData.put("lockDuration", lockoutStatus.getLockDuration());
+            Map<String, Object> errorData = ResponseMessageHandler.createLoginLockoutResponse(
+                    lockoutStatus.getLockedAt(),
+                    lockoutStatus.getLockDuration(),
+                    lockoutStatus.getFailedAttempts()
+            );
 
             Response challengeResponse = challenge(context, ResponseCodes.LOGIN_ACCOUNT_LOCKED, errorData);
             context.challenge(challengeResponse);
