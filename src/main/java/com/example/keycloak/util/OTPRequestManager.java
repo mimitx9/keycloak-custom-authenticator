@@ -11,14 +11,15 @@ import java.io.Serializable;
 public class OTPRequestManager {
 
     private static final Logger logger = Logger.getLogger(OTPRequestManager.class);
-
+    private static final long OTP_VALIDITY_MS = 5 * 60 * 1000L;
+    private static final String OTP_SENT_TIME_PREFIX = "otpTime_";
     private static final String CACHE_NAME = "otpBizconnectFailCount";
     private static final String OTP_REQ_PREFIX = "otpReq_";
     private static final String OTP_COOLDOWN_PREFIX = "otpCool_";
 
     private static final int MAX_REQUESTS_PER_HOUR = 5;
-    private static final long COOLDOWN_MS = 30 * 1000L; // 30 seconds
-    private static final long RESET_PERIOD_MS = 60 * 60 * 1000L; // 1 hour
+    private static final long COOLDOWN_MS = 30 * 1000L;
+    private static final long RESET_PERIOD_MS = 60 * 60 * 1000L;
 
     public static boolean canRequestOTP(AuthenticationFlowContext context, UserModel user) {
         try {
@@ -124,10 +125,12 @@ public class OTPRequestManager {
     public static void recordOTPSent(AuthenticationFlowContext context, UserModel user) {
         try {
             Cache<String, Long> cache = getCache(context);
-            String cacheKey = OTP_COOLDOWN_PREFIX + user.getUsername();
+            String cooldownKey = OTP_COOLDOWN_PREFIX + user.getUsername();
+            String timeKey = OTP_SENT_TIME_PREFIX + user.getUsername();
 
             long currentTime = System.currentTimeMillis();
-            cache.put(cacheKey, currentTime);
+            cache.put(cooldownKey, currentTime);
+            cache.put(timeKey, currentTime);
 
             logger.infof("OTP sent time recorded for user: %s", user.getUsername());
 
@@ -139,8 +142,11 @@ public class OTPRequestManager {
     public static void clearOTPSentTime(AuthenticationFlowContext context, UserModel user) {
         try {
             Cache<String, Long> cache = getCache(context);
-            String cacheKey = OTP_COOLDOWN_PREFIX + user.getUsername();
-            cache.remove(cacheKey);
+            String cooldownKey = OTP_COOLDOWN_PREFIX + user.getUsername();
+            String timeKey = OTP_SENT_TIME_PREFIX + user.getUsername();
+
+            cache.remove(cooldownKey);
+            cache.remove(timeKey);
 
             logger.infof("OTP sent time cleared for user: %s", user.getUsername());
 
@@ -161,7 +167,6 @@ public class OTPRequestManager {
 
             long currentTime = System.currentTimeMillis();
 
-            // Check if reset period has passed
             if (requestData.getResetTime() > 0 &&
                     currentTime - requestData.getResetTime() >= RESET_PERIOD_MS) {
                 return MAX_REQUESTS_PER_HOUR;
@@ -235,6 +240,53 @@ public class OTPRequestManager {
                     "requestCount=" + requestCount +
                     ", resetTime=" + resetTime +
                     '}';
+        }
+    }
+
+    public static boolean isOTPValid(AuthenticationFlowContext context, UserModel user) {
+        try {
+            Cache<String, Long> cache = getCache(context);
+            String cacheKey = OTP_SENT_TIME_PREFIX + user.getUsername();
+
+            Long sentTime = cache.get(cacheKey);
+            if (sentTime == null) {
+                return false;
+            }
+
+            long currentTime = System.currentTimeMillis();
+            boolean isValid = (currentTime - sentTime) <= OTP_VALIDITY_MS;
+
+            if (!isValid) {
+                cache.remove(cacheKey);
+                logger.infof("OTP expired for user: %s", user.getUsername());
+            }
+
+            return isValid;
+
+        } catch (Exception e) {
+            logger.warnf("Cache error during OTP validity check: %s", e.getMessage());
+            return true;
+        }
+    }
+
+    public static long getOTPRemainingTime(AuthenticationFlowContext context, UserModel user) {
+        try {
+            Cache<String, Long> cache = getCache(context);
+            String cacheKey = OTP_SENT_TIME_PREFIX + user.getUsername();
+
+            Long sentTime = cache.get(cacheKey);
+            if (sentTime == null) {
+                return 0;
+            }
+
+            long currentTime = System.currentTimeMillis();
+            long elapsed = currentTime - sentTime;
+
+            return Math.max(0, (OTP_VALIDITY_MS - elapsed) / 1000);
+
+        } catch (Exception e) {
+            logger.warnf("Cache error during OTP remaining time check: %s", e.getMessage());
+            return 0;
         }
     }
 }

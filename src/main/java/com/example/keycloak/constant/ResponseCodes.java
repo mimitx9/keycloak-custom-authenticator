@@ -41,7 +41,7 @@ public final class ResponseCodes {
     public static final String LOCKOUT_EXPIRED = "LOCKOUT_EXPIRED";
     public static final String MAX_ATTEMPTS_REACHED = "MAX_ATTEMPTS_REACHED";
 
-    // Session related
+    public static final String OTP_EXPIRED = "OTP_EXPIRED";
     public static final String SESSION_EXPIRED = "SESSION_EXPIRED";
     public static final String INVALID_SESSION = "INVALID_SESSION";
     public static final String SESSION_TIMEOUT = "SESSION_TIMEOUT";

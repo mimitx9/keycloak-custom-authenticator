@@ -74,18 +74,18 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
+        if (!OTPRequestManager.canRequestOTP(context, user)) {
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPRequestLimitResponse();
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_REQUEST_LIMIT_EXCEEDED, responseData);
+            context.challenge(challengeResponse);
+            return;
+        }
+
         if (!OTPRequestManager.canResendOTP(context, user)) {
             long remainingSeconds = OTPRequestManager.getResendCooldownRemaining(context, user);
             Map<String, Object> responseData = ResponseMessageHandler.createResendCooldownResponse(remainingSeconds);
 
             Response challengeResponse = challenge(context, ResponseCodes.OTP_RESEND_COOLDOWN, responseData);
-            context.challenge(challengeResponse);
-            return;
-        }
-
-        if (!OTPRequestManager.canRequestOTP(context, user)) {
-            Map<String, Object> responseData = ResponseMessageHandler.createOTPRequestLimitResponse();
-            Response challengeResponse = challenge(context, ResponseCodes.OTP_REQUEST_LIMIT_EXCEEDED, responseData);
             context.challenge(challengeResponse);
             return;
         }
@@ -156,6 +156,17 @@ public class OTPAuthenticator implements Authenticator {
             context.challenge(challengeResponse);
             return;
         }
+
+        if (!OTPRequestManager.isOTPValid(context, user)) {
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("message", "Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại OTP mới.");
+            responseData.put("otpExpired", true);
+
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_EXPIRED, responseData);
+            context.challenge(challengeResponse);
+            return;
+        }
+
 
         List<String> otpSessionList = user.getAttributes().get("otpSession");
         if (otpSessionList == null || otpSessionList.isEmpty()) {
