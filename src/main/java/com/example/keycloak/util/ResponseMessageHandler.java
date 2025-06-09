@@ -24,7 +24,6 @@ public class ResponseMessageHandler {
         return responseData;
     }
 
-    // Message cho login lockout
     private static String createLoginLockoutMessage(int lockDurationMinutes) {
         if (lockDurationMinutes >= 60) {
             int hours = lockDurationMinutes / 60;
@@ -41,12 +40,8 @@ public class ResponseMessageHandler {
         responseData.put("lockedAt", lockedAt);
         responseData.put("lockDuration", lockDuration);
         responseData.put("attemptCount", attemptCount);
-
-        // Thêm lockDurationMinutes cho frontend hiển thị "${lockDurationMinutes} phút"
         int lockDurationMinutes = lockDuration / 60;
         responseData.put("lockDurationMinutes", lockDurationMinutes);
-
-        // Thêm unlockTime cho frontend
         long unlockTime = lockedAt + (lockDuration * 1000L);
         responseData.put("unlockTime", unlockTime);
 
@@ -68,33 +63,30 @@ public class ResponseMessageHandler {
         responseData.put("message", "VPBank đã gửi mã OTP đến số điện thoại " + maskPhone(phone) + ". Vui lòng nhập mã OTP này để đăng nhập.");
         responseData.put("phone", maskPhone(phone));
 
-        // Thêm thông tin OTP validity cho frontend countdown
         long currentTime = System.currentTimeMillis();
         responseData.put("otpSentAt", currentTime);
-        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
-        responseData.put("otpRemainingSeconds", 180); // Thời gian valid thực tế: lần đầu là 180s
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", 180);
 
         return responseData;
     }
 
-    // Method cho OTP form khi refresh trang
     public static Map<String, Object> createOTPFormResponse(String phone, long otpSentAt, long remainingSeconds) {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("message", "Vui lòng nhập mã OTP đã được gửi đến số điện thoại " + maskPhone(phone) + ".");
         responseData.put("phone", maskPhone(phone));
         responseData.put("otpSentAt", otpSentAt);
-        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
-        responseData.put("otpRemainingSeconds", remainingSeconds); // Thời gian valid thực tế: còn lại bao nhiêu
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", remainingSeconds);
 
         return responseData;
     }
 
-    // THÊM MỚI: Response cho OTP expired
     public static Map<String, Object> createOTPExpiredResponse() {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("message", "Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại OTP mới.");
-        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
-        responseData.put("otpRemainingSeconds", 0);   // Thời gian valid thực tế: đã hết (0s)
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", 0);
         responseData.put("otpExpired", true);
         return responseData;
     }
@@ -109,7 +101,7 @@ public class ResponseMessageHandler {
     public static Map<String, Object> createResendCooldownResponse(long cooldownSeconds) {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("cooldownSeconds", cooldownSeconds);
-        responseData.put("resendCooldown", cooldownSeconds); // Thêm field này cho frontend
+        responseData.put("resendCooldown", cooldownSeconds);
         responseData.put("message", "Yêu cầu gửi lại OTP không thành công. Vui lòng thử lại sau " + cooldownSeconds + " giây.");
         responseData.put("disableResendButton", true);
         return responseData;
@@ -129,7 +121,6 @@ public class ResponseMessageHandler {
         return responseData;
     }
 
-    // Cập nhật message theo format yêu cầu
     private static String createLockoutMessage(int lockDuration) {
         int minutes = lockDuration / 60;
         int hours = minutes / 60;
