@@ -37,7 +37,7 @@ public class CustomLoginFormAuthenticatorFactory implements AuthenticatorFactory
 
     @Override
     public boolean isConfigurable() {
-        return false;
+        return true;
     }
 
     @Override
