@@ -12,6 +12,7 @@ public class ResponseMessageHandler {
         responseData.put("lockedAt", lockedAt);
         responseData.put("lockDuration", lockDuration);
         responseData.put("attemptCount", attemptCount);
+
         long unlockTime = lockedAt + (lockDuration * 1000L);
         responseData.put("unlockTime", unlockTime);
 
@@ -66,6 +67,35 @@ public class ResponseMessageHandler {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("message", "VPBank đã gửi mã OTP đến số điện thoại " + maskPhone(phone) + ". Vui lòng nhập mã OTP này để đăng nhập.");
         responseData.put("phone", maskPhone(phone));
+
+        // Thêm thông tin OTP validity cho frontend countdown
+        long currentTime = System.currentTimeMillis();
+        responseData.put("otpSentAt", currentTime);
+        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
+        responseData.put("otpRemainingSeconds", 180); // Thời gian valid thực tế: lần đầu là 180s
+
+        return responseData;
+    }
+
+    // Method cho OTP form khi refresh trang
+    public static Map<String, Object> createOTPFormResponse(String phone, long otpSentAt, long remainingSeconds) {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("message", "Vui lòng nhập mã OTP đã được gửi đến số điện thoại " + maskPhone(phone) + ".");
+        responseData.put("phone", maskPhone(phone));
+        responseData.put("otpSentAt", otpSentAt);
+        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
+        responseData.put("otpRemainingSeconds", remainingSeconds); // Thời gian valid thực tế: còn lại bao nhiêu
+
+        return responseData;
+    }
+
+    // THÊM MỚI: Response cho OTP expired
+    public static Map<String, Object> createOTPExpiredResponse() {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("message", "Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại OTP mới.");
+        responseData.put("otpValiditySeconds", 180); // Thời gian tối đa: 3 phút
+        responseData.put("otpRemainingSeconds", 0);   // Thời gian valid thực tế: đã hết (0s)
+        responseData.put("otpExpired", true);
         return responseData;
     }
 

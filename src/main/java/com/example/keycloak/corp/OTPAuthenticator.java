@@ -59,6 +59,22 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
+        long otpSentTime = OTPRequestManager.getOTPSentTime(context, user);
+        if (otpSentTime > 0) {
+            long remainingSeconds = OTPRequestManager.getOTPRemainingSeconds(context, user);
+
+            if (remainingSeconds > 0) {
+                Map<String, Object> responseData = ResponseMessageHandler.createOTPFormResponse(
+                        phone, otpSentTime, remainingSeconds);
+                Response challengeResponse = challenge(context, ResponseCodes.OTP_SENT, responseData);
+                context.challenge(challengeResponse);
+                return;
+            } else {
+                OTPRequestManager.clearOTPSentTime(context, user);
+                user.removeAttribute("otpSession");
+            }
+        }
+
         RetryLogicHandler.LockoutStatus lockoutStatus =
                 RetryLogicHandler.checkLockoutStatus(context, identifier, "otp");
 
@@ -187,6 +203,14 @@ public class OTPAuthenticator implements Authenticator {
                 logger.infof("OTP verification successful for user: %s", user.getUsername());
                 context.success();
             } else {
+                long remainingSeconds = OTPRequestManager.getOTPRemainingSeconds(context, user);
+                if (remainingSeconds <= 0) {
+                    Map<String, Object> responseData = ResponseMessageHandler.createOTPExpiredResponse();
+                    Response challengeResponse = challenge(context, ResponseCodes.OTP_EXPIRED, responseData);
+                    context.challenge(challengeResponse);
+                    return;
+                }
+
                 RetryLogicHandler.LockoutResult lockoutResult =
                         RetryLogicHandler.recordFailedAttempt(context, identifier, "otp");
 
@@ -297,6 +321,12 @@ public class OTPAuthenticator implements Authenticator {
         if (response.statusCode() == 200) {
             JsonNode jsonResponse = objectMapper.readTree(response.body());
             String error = jsonResponse.get("error").asText();
+
+            if ("-8".equals(error)) {
+                logger.warnf("OTP expired for session: %s", otpSession);
+                return false;
+            }
+
             return "0".equals(error);
         }
 

@@ -11,8 +11,8 @@ import java.io.Serializable;
 public class OTPRequestManager {
 
     private static final Logger logger = Logger.getLogger(OTPRequestManager.class);
-    private static final long OTP_VALIDITY_MS = 5 * 60 * 1000L;
-    private static final String OTP_SENT_TIME_PREFIX = "otpTime_";
+    private static final long OTP_VALIDITY_MS = 3 * 60 * 1000L;
+    private static final String OTP_SENT_TIME_PREFIX = "otpSentTime_";
     private static final String CACHE_NAME = "otpBizconnectFailCount";
     private static final String OTP_REQ_PREFIX = "otpReq_";
     private static final String OTP_COOLDOWN_PREFIX = "otpCool_";
@@ -286,6 +286,47 @@ public class OTPRequestManager {
 
         } catch (Exception e) {
             logger.warnf("Cache error during OTP remaining time check: %s", e.getMessage());
+            return 0;
+        }
+    }
+
+    public static long getOTPRemainingSeconds(AuthenticationFlowContext context, UserModel user) {
+        try {
+            Cache<String, Long> cache = getCache(context);
+            String cacheKey = OTP_SENT_TIME_PREFIX + user.getUsername();
+
+            Long sentTime = cache.get(cacheKey);
+            if (sentTime == null) {
+                return 0;
+            }
+
+            long currentTime = System.currentTimeMillis();
+            long elapsed = currentTime - sentTime;
+
+            long remainingMs = OTP_VALIDITY_MS - elapsed;
+
+            if (remainingMs <= 0) {
+                return 0;
+            }
+
+            return remainingMs / 1000;
+
+        } catch (Exception e) {
+            logger.warnf("Cache error during OTP remaining time check: %s", e.getMessage());
+            return 180;
+        }
+    }
+
+    public static long getOTPSentTime(AuthenticationFlowContext context, UserModel user) {
+        try {
+            Cache<String, Long> cache = getCache(context);
+            String cacheKey = OTP_SENT_TIME_PREFIX + user.getUsername();
+
+            Long sentTime = cache.get(cacheKey);
+            return sentTime != null ? sentTime : 0;
+
+        } catch (Exception e) {
+            logger.warnf("Cache error during OTP sent time retrieval: %s", e.getMessage());
             return 0;
         }
     }
