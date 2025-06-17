@@ -52,9 +52,11 @@ public class ResponseMessageHandler {
         return responseData;
     }
 
-    public static Map<String, Object> createOTPInvalidResponse() {
+    public static Map<String, Object> createOTPInvalidResponse(long otpRemainingSeconds) {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("message", "Mã OTP không hợp lệ");
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", otpRemainingSeconds);
         return responseData;
     }
 

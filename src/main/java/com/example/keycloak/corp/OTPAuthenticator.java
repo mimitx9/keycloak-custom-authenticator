@@ -136,6 +136,8 @@ public class OTPAuthenticator implements Authenticator {
         }
     }
 
+    // Phần code trong action method của OTPAuthenticator.java cần sửa
+
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
@@ -183,7 +185,6 @@ public class OTPAuthenticator implements Authenticator {
             return;
         }
 
-
         List<String> otpSessionList = user.getAttributes().get("otpSession");
         if (otpSessionList == null || otpSessionList.isEmpty()) {
             logger.error("Missing OTP session in user attributes");
@@ -224,7 +225,8 @@ public class OTPAuthenticator implements Authenticator {
                     Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID_LOCKED, responseData);
                     context.challenge(challengeResponse);
                 } else {
-                    Map<String, Object> responseData = ResponseMessageHandler.createOTPInvalidResponse();
+                    // UPDATED: Thêm otpRemainingSeconds vào response
+                    Map<String, Object> responseData = ResponseMessageHandler.createOTPInvalidResponse(remainingSeconds);
                     Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID, responseData);
                     context.challenge(challengeResponse);
                 }
