@@ -60,6 +60,31 @@ public class ResponseMessageHandler {
         return responseData;
     }
 
+    public static Map<String, Object> createOTPInvalidFormatResponse(long otpRemainingSeconds) {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("message", "Mã OTP không đúng định dạng. Vui lòng nhập 6 chữ số.");
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", otpRemainingSeconds);
+        return responseData;
+    }
+
+    public static Map<String, Object> createFieldRequiredResponse(long otpRemainingSeconds) {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("message", "Vui lòng nhập mã OTP");
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", otpRemainingSeconds);
+        return responseData;
+    }
+
+    public static Map<String, Object> createOTPVerifyErrorResponse(long otpRemainingSeconds) {
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("message", "Có lỗi xảy ra khi xác thực OTP. Vui lòng thử lại.");
+        responseData.put("otpValiditySeconds", 180);
+        responseData.put("otpRemainingSeconds", otpRemainingSeconds);
+        responseData.put("contactInfo", CONTACT_INFO);
+        return responseData;
+    }
+
     public static Map<String, Object> createOTPSentResponse(String phone) {
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("message", "VPBank đã gửi mã OTP đến số điện thoại " + maskPhone(phone) + ". Vui lòng nhập mã OTP này để đăng nhập.");

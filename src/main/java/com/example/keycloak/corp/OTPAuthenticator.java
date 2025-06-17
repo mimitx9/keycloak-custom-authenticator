@@ -136,8 +136,6 @@ public class OTPAuthenticator implements Authenticator {
         }
     }
 
-    // Phần code trong action method của OTPAuthenticator.java cần sửa
-
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
@@ -162,7 +160,9 @@ public class OTPAuthenticator implements Authenticator {
 
         String otp = formData.getFirst(OTP_PARAM);
         if (otp == null || otp.trim().isEmpty()) {
-            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, null);
+            long remainingSeconds = OTPRequestManager.getOTPRemainingSeconds(context, user);
+            Map<String, Object> responseData = ResponseMessageHandler.createFieldRequiredResponse(remainingSeconds);
+            Response challengeResponse = challenge(context, ResponseCodes.FIELD_REQUIRED, responseData);
             context.challenge(challengeResponse);
             return;
         }
@@ -170,7 +170,9 @@ public class OTPAuthenticator implements Authenticator {
         String expectedLength = getConfigValue(context.getAuthenticatorConfig(), OTPAuthenticatorFactory.OTP_LENGTH, "6");
         String otpPattern = "^[0-9]{" + expectedLength + "}$";
         if (!otp.matches(otpPattern)) {
-            Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID_FORMAT, null);
+            long remainingSeconds = OTPRequestManager.getOTPRemainingSeconds(context, user);
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPInvalidFormatResponse(remainingSeconds);
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID_FORMAT, responseData);
             context.challenge(challengeResponse);
             return;
         }
@@ -225,7 +227,6 @@ public class OTPAuthenticator implements Authenticator {
                     Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID_LOCKED, responseData);
                     context.challenge(challengeResponse);
                 } else {
-                    // UPDATED: Thêm otpRemainingSeconds vào response
                     Map<String, Object> responseData = ResponseMessageHandler.createOTPInvalidResponse(remainingSeconds);
                     Response challengeResponse = challenge(context, ResponseCodes.OTP_INVALID, responseData);
                     context.challenge(challengeResponse);
@@ -233,7 +234,9 @@ public class OTPAuthenticator implements Authenticator {
             }
         } catch (Exception e) {
             logger.errorf(e, "OTP verification failed due to exception");
-            Response challengeResponse = challenge(context, ResponseCodes.OTP_VERIFY_ERROR, null);
+            long remainingSeconds = OTPRequestManager.getOTPRemainingSeconds(context, user);
+            Map<String, Object> responseData = ResponseMessageHandler.createOTPVerifyErrorResponse(remainingSeconds);
+            Response challengeResponse = challenge(context, ResponseCodes.OTP_VERIFY_ERROR, responseData);
             context.challenge(challengeResponse);
         }
     }
