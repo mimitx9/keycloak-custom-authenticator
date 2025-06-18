@@ -14,4 +14,8 @@ public class TokenResponse {
 
     @JsonProperty("token_type")
     public String tokenType = "Bearer";
+    @JsonProperty("scope")
+    public String scope;
+    @JsonProperty("session_state")
+    public String sessionState;
 }

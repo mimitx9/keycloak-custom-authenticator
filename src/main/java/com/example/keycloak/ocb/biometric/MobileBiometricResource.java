@@ -8,19 +8,22 @@ import com.example.keycloak.ocb.biometric.service.WebAuthnVerificationService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.keycloak.TokenVerifier;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.ServicesLogger;
 import org.keycloak.services.Urls;
+import org.keycloak.util.JsonSerialization;
 
+import java.security.Signature;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Path("/realms/{realm}/mobile-biometric")
 public class MobileBiometricResource {
@@ -33,50 +36,6 @@ public class MobileBiometricResource {
         this.session = session;
         this.credentialService = new WebAuthnCredentialService();
         this.verificationService = new WebAuthnVerificationService();
-    }
-
-    @GET
-    @Path("/debug")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response debug(@PathParam("realm") String realmName) {
-        try {
-            Map<String, Object> debugInfo = new HashMap<>();
-            debugInfo.put("pathRealmName", realmName);
-
-            // Test realm lookup
-            RealmModel realm = session.realms().getRealmByName(realmName);
-            debugInfo.put("realmFound", realm != null);
-
-            if (realm != null) {
-                debugInfo.put("realmDisplayName", realm.getDisplayName());
-                debugInfo.put("realmEnabled", realm.isEnabled());
-            }
-
-            // Test context realm
-            RealmModel contextRealm = session.getContext().getRealm();
-            debugInfo.put("contextRealmFound", contextRealm != null);
-
-            if (contextRealm != null) {
-                debugInfo.put("contextRealmName", contextRealm.getName());
-            }
-
-            // List all realms
-            List<String> allRealms = session.realms().getRealmsStream()
-                    .map(RealmModel::getName)
-                    .collect(Collectors.toList());
-            debugInfo.put("allRealms", allRealms);
-
-            debugInfo.put("status", "extension working");
-            debugInfo.put("timestamp", System.currentTimeMillis());
-
-            return Response.ok(debugInfo).build();
-
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            error.put("stackTrace", Arrays.toString(e.getStackTrace()));
-            return Response.status(500).entity(error).build();
-        }
     }
 
     @GET
@@ -114,7 +73,8 @@ public class MobileBiometricResource {
             options.authenticatorAttachment = "platform";
             options.userVerificationRequirement = "required";
             options.requireResidentKey = "false";
-            storeChallenge(user, options.challenge);
+
+            ChallengeCacheService.storeRegistrationChallenge(options.challenge, user.getUsername(), user.getId());
 
             return Response.ok(options).build();
 
@@ -147,10 +107,22 @@ public class MobileBiometricResource {
                 return Response.status(401).entity("{\"error\":\"Invalid token\"}").build();
             }
 
+            // Get challenge from cache instead of user attributes
+            ChallengeCacheService.ChallengeData challengeData = ChallengeCacheService.getRegistrationChallenge(user.getId());
+            if (challengeData == null) {
+                // Fallback: try to get by username
+                challengeData = ChallengeCacheService.getRegistrationChallengeByUsername(user.getUsername());
+            }
+
+            if (challengeData == null) {
+                return Response.status(400).entity("{\"error\":\"Invalid session or expired challenge\"}").build();
+            }
+
+            String expectedChallenge = challengeData.challenge;
+            ServicesLogger.LOGGER.info("Found registration challenge in cache: " + expectedChallenge);
+
             // Validate challenge
-            String expectedChallenge = getStoredChallenge(user);
-            if (expectedChallenge == null ||
-                    !verificationService.validateChallenge(request.clientDataJSON, expectedChallenge)) {
+            if (!verificationService.validateChallenge(request.clientDataJSON, expectedChallenge)) {
                 return Response.status(400).entity("{\"error\":\"Invalid challenge\"}").build();
             }
 
@@ -169,8 +141,8 @@ public class MobileBiometricResource {
             // Save credential
             String savedCredentialId = credentialService.saveCredential(user, request.publicKeyCredentialId, credentialData);
 
-            // Clear challenge
-            clearChallenge(user);
+            // Clear challenge from cache
+            ChallengeCacheService.clearRegistrationChallenge(user.getId());
 
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
@@ -310,7 +282,6 @@ public class MobileBiometricResource {
     }
 
     private String getRealmHostname(RealmModel realm) {
-        // Get hostname from current request context
         UriInfo uriInfo = session.getContext().getUri();
         if (uriInfo != null) {
             return uriInfo.getBaseUri().getHost();
@@ -318,24 +289,96 @@ public class MobileBiometricResource {
         return "localhost"; // fallback
     }
 
-    private void storeChallenge(UserModel user, String challenge) {
-        user.setAttribute("webauthn.temp.challenge", Arrays.asList(challenge));
-    }
-
-    private String getStoredChallenge(UserModel user) {
-        var challenges = user.getAttributes().get("webauthn.temp.challenge");
-        return (challenges != null && !challenges.isEmpty()) ? challenges.get(0) : null;
-    }
-
-    private void clearChallenge(UserModel user) {
-        user.removeAttribute("webauthn.temp.challenge");
-    }
+    // Cách đơn giản nhất - chỉ thay thế method createTokens()
 
     private TokenResponse createTokens(UserModel user, RealmModel realm) {
-        TokenResponse response = new TokenResponse();
-        response.accessToken = "mock_access_token_" + user.getId();
-        response.refreshToken = "mock_refresh_token_" + user.getId();
-        response.expiresIn = 3600;
-        return response;
+        try {
+            // Tạo một simple JWT token với Keycloak format
+            long now = Time.currentTime();
+            long exp = now + realm.getAccessTokenLifespan();
+
+            // Tạo access token claims
+            Map<String, Object> accessTokenClaims = new HashMap<>();
+            accessTokenClaims.put("iss", Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
+            accessTokenClaims.put("sub", user.getId());
+            accessTokenClaims.put("aud", "account");
+            accessTokenClaims.put("exp", exp);
+            accessTokenClaims.put("iat", now);
+            accessTokenClaims.put("jti", KeycloakModelUtils.generateId());
+            accessTokenClaims.put("preferred_username", user.getUsername());
+            accessTokenClaims.put("email", user.getEmail());
+            accessTokenClaims.put("scope", "openid profile email");
+            accessTokenClaims.put("typ", "Bearer");
+
+            // Tạo refresh token claims
+            Map<String, Object> refreshTokenClaims = new HashMap<>();
+            refreshTokenClaims.put("iss", Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
+            refreshTokenClaims.put("sub", user.getId());
+            refreshTokenClaims.put("aud", "account");
+            refreshTokenClaims.put("exp", now + realm.getRefreshTokenMaxReuse());
+            refreshTokenClaims.put("iat", now);
+            refreshTokenClaims.put("jti", KeycloakModelUtils.generateId());
+            refreshTokenClaims.put("typ", "Refresh");
+
+            // Encode tokens
+            String accessToken = createSimpleJWT(accessTokenClaims, realm);
+            String refreshToken = createSimpleJWT(refreshTokenClaims, realm);
+
+            TokenResponse response = new TokenResponse();
+            response.accessToken = accessToken;
+            response.refreshToken = refreshToken;
+            response.expiresIn = (int) realm.getAccessTokenLifespan();
+            response.tokenType = "Bearer";
+            response.scope = "openid profile email";
+
+            ServicesLogger.LOGGER.info("Created JWT tokens for user: " + user.getUsername());
+            return response;
+
+        } catch (Exception e) {
+            ServicesLogger.LOGGER.error("Failed to create JWT tokens, using mock: " + e.getMessage(), e);
+
+            // Fallback to mock
+            TokenResponse response = new TokenResponse();
+            response.accessToken = "mock_access_token_" + user.getId() + "_" + System.currentTimeMillis();
+            response.refreshToken = "mock_refresh_token_" + user.getId() + "_" + System.currentTimeMillis();
+            response.expiresIn = 3600;
+            response.tokenType = "Bearer";
+            return response;
+        }
+    }
+
+    private String createSimpleJWT(Map<String, Object> claims, RealmModel realm) {
+        try {
+            KeyManager.ActiveRsaKey activeKey = session.keys().getActiveRsaKey(realm);
+            if (activeKey == null) {
+                throw new RuntimeException("No RSA key available");
+            }
+
+            Map<String, Object> header = new HashMap<>();
+            header.put("alg", "RS256");
+            header.put("typ", "JWT");
+            header.put("kid", activeKey.getKid());
+
+            // Encode parts
+            String encodedHeader = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(JsonSerialization.writeValueAsString(header).getBytes("UTF-8"));
+
+            String encodedPayload = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(JsonSerialization.writeValueAsString(claims).getBytes("UTF-8"));
+
+            // Sign
+            String signingInput = encodedHeader + "." + encodedPayload;
+            Signature signer = Signature.getInstance("SHA256withRSA");
+            signer.initSign(activeKey.getPrivateKey());
+            signer.update(signingInput.getBytes("UTF-8"));
+
+            String signature = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(signer.sign());
+
+            return signingInput + "." + signature;
+
+        } catch (Exception e) {
+            throw new RuntimeException("JWT creation failed: " + e.getMessage(), e);
+        }
     }
 }
