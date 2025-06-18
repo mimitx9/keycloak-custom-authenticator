@@ -5,7 +5,7 @@ import org.keycloak.services.resource.RealmResourceProvider;
 
 public class MobileBiometricResourceProvider implements RealmResourceProvider {
 
-    private KeycloakSession session;
+    private final KeycloakSession session;
 
     public MobileBiometricResourceProvider(KeycloakSession session) {
         this.session = session;

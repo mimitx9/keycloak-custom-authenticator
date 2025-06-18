@@ -19,6 +19,7 @@ import org.keycloak.services.ServicesLogger;
 import org.keycloak.services.Urls;
 import org.keycloak.util.JsonSerialization;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Signature;
 import java.util.Arrays;
 import java.util.Base64;
@@ -46,13 +47,11 @@ public class MobileBiometricResource {
                                      @Context HttpHeaders headers) {
 
         try {
-            // Fix: Lấy realm từ realmName path parameter
             RealmModel realm = session.realms().getRealmByName(realmName);
             if (realm == null) {
                 return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
             }
 
-            // Set realm context
             session.getContext().setRealm(realm);
 
             UserModel user = validateToken(authHeader, realm);
@@ -93,13 +92,11 @@ public class MobileBiometricResource {
                                          @HeaderParam("Authorization") String authHeader) {
 
         try {
-            // Fix: Lấy realm từ realmName path parameter
             RealmModel realm = session.realms().getRealmByName(realmName);
             if (realm == null) {
                 return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
             }
 
-            // Set realm context
             session.getContext().setRealm(realm);
 
             UserModel user = validateToken(authHeader, realm);
@@ -107,10 +104,8 @@ public class MobileBiometricResource {
                 return Response.status(401).entity("{\"error\":\"Invalid token\"}").build();
             }
 
-            // Get challenge from cache instead of user attributes
             ChallengeCacheService.ChallengeData challengeData = ChallengeCacheService.getRegistrationChallenge(user.getId());
             if (challengeData == null) {
-                // Fallback: try to get by username
                 challengeData = ChallengeCacheService.getRegistrationChallengeByUsername(user.getUsername());
             }
 
@@ -121,12 +116,10 @@ public class MobileBiometricResource {
             String expectedChallenge = challengeData.challenge;
             ServicesLogger.LOGGER.info("Found registration challenge in cache: " + expectedChallenge);
 
-            // Validate challenge
             if (!verificationService.validateChallenge(request.clientDataJSON, expectedChallenge)) {
                 return Response.status(400).entity("{\"error\":\"Invalid challenge\"}").build();
             }
 
-            // Extract public key from attestation
             String publicKey = verificationService.extractPublicKeyFromAttestation(request.attestationObject);
 
             CredentialData credentialData = new CredentialData();
@@ -137,12 +130,10 @@ public class MobileBiometricResource {
             credentialData.transports = request.transports != null ?
                     request.transports : "internal";
             credentialData.createdAt = System.currentTimeMillis();
-            credentialData.algorithm = -7; // ES256 default
+            credentialData.algorithm = -7;
 
-            // Save credential
             String savedCredentialId = credentialService.saveCredential(user, request.publicKeyCredentialId, credentialData);
 
-            // Clear challenge from cache
             ChallengeCacheService.clearRegistrationChallenge(user.getId());
 
             Map<String, Object> response = new HashMap<>();
@@ -290,18 +281,15 @@ public class MobileBiometricResource {
         if (uriInfo != null) {
             return uriInfo.getBaseUri().getHost();
         }
-        return "localhost"; // fallback
+        return "localhost";
     }
 
-    // Cách đơn giản nhất - chỉ thay thế method createTokens()
 
     private TokenResponse createTokens(UserModel user, RealmModel realm) {
         try {
-            // Tạo một simple JWT token với Keycloak format
             long now = Time.currentTime();
             long exp = now + realm.getAccessTokenLifespan();
 
-            // Tạo access token claims
             Map<String, Object> accessTokenClaims = new HashMap<>();
             accessTokenClaims.put("iss", Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
             accessTokenClaims.put("sub", user.getId());
@@ -314,7 +302,6 @@ public class MobileBiometricResource {
             accessTokenClaims.put("scope", "openid profile email");
             accessTokenClaims.put("typ", "Bearer");
 
-            // Tạo refresh token claims
             Map<String, Object> refreshTokenClaims = new HashMap<>();
             refreshTokenClaims.put("iss", Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
             refreshTokenClaims.put("sub", user.getId());
@@ -324,7 +311,6 @@ public class MobileBiometricResource {
             refreshTokenClaims.put("jti", KeycloakModelUtils.generateId());
             refreshTokenClaims.put("typ", "Refresh");
 
-            // Encode tokens
             String accessToken = createSimpleJWT(accessTokenClaims, realm);
             String refreshToken = createSimpleJWT(refreshTokenClaims, realm);
 
@@ -339,15 +325,8 @@ public class MobileBiometricResource {
             return response;
 
         } catch (Exception e) {
-            ServicesLogger.LOGGER.error("Failed to create JWT tokens, using mock: " + e.getMessage(), e);
-
-            // Fallback to mock
-            TokenResponse response = new TokenResponse();
-            response.accessToken = "mock_access_token_" + user.getId() + "_" + System.currentTimeMillis();
-            response.refreshToken = "mock_refresh_token_" + user.getId() + "_" + System.currentTimeMillis();
-            response.expiresIn = 3600;
-            response.tokenType = "Bearer";
-            return response;
+            ServicesLogger.LOGGER.error("Failed to create tokens for user: " + user.getUsername(), e);
+            throw new RuntimeException("Token creation failed: " + e.getMessage(), e);
         }
     }
 
@@ -363,18 +342,16 @@ public class MobileBiometricResource {
             header.put("typ", "JWT");
             header.put("kid", activeKey.getKid());
 
-            // Encode parts
             String encodedHeader = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(JsonSerialization.writeValueAsString(header).getBytes("UTF-8"));
+                    .encodeToString(JsonSerialization.writeValueAsString(header).getBytes(StandardCharsets.UTF_8));
 
             String encodedPayload = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(JsonSerialization.writeValueAsString(claims).getBytes("UTF-8"));
+                    .encodeToString(JsonSerialization.writeValueAsString(claims).getBytes(StandardCharsets.UTF_8));
 
-            // Sign
             String signingInput = encodedHeader + "." + encodedPayload;
             Signature signer = Signature.getInstance("SHA256withRSA");
             signer.initSign(activeKey.getPrivateKey());
-            signer.update(signingInput.getBytes("UTF-8"));
+            signer.update(signingInput.getBytes(StandardCharsets.UTF_8));
 
             String signature = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(signer.sign());

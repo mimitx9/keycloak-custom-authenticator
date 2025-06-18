@@ -42,16 +42,12 @@ public class WebAuthnVerificationService {
         try {
             ServicesLogger.LOGGER.info("Extracting public key from attestation: " + attestationObject);
 
-            // Check if it's our custom format: webauthn-pubkey:BASE64_KEY
             if (attestationObject.startsWith("webauthn-pubkey:")) {
                 String publicKeyB64 = attestationObject.substring("webauthn-pubkey:".length());
                 ServicesLogger.LOGGER.info("Found custom format, extracted public key: " + publicKeyB64);
-
-                // Fix Base64 padding if needed
                 String fixedBase64 = fixBase64Padding(publicKeyB64);
                 ServicesLogger.LOGGER.info("Fixed Base64 padding: " + fixedBase64);
 
-                // Validate that the fixed part is valid base64
                 try {
                     Base64.getDecoder().decode(fixedBase64);
                     ServicesLogger.LOGGER.info("Public key base64 validation successful");
@@ -59,13 +55,11 @@ public class WebAuthnVerificationService {
                 } catch (IllegalArgumentException e) {
                     ServicesLogger.LOGGER.error("Invalid base64 after padding fix: " + fixedBase64, e);
 
-                    // Try without validation - just return the original
                     ServicesLogger.LOGGER.warn("Returning original public key without validation");
                     return publicKeyB64;
                 }
             }
 
-            // If not our custom format, try to decode as raw base64
             String fixedAttestation = fixBase64Padding(attestationObject);
             try {
                 byte[] attestationBytes = Base64.getUrlDecoder().decode(fixedAttestation);
@@ -92,21 +86,12 @@ public class WebAuthnVerificationService {
         }
     }
 
-    /**
-     * Fix Base64 padding to make it valid
-     */
     private String fixBase64Padding(String base64String) {
         if (base64String == null || base64String.isEmpty()) {
             return base64String;
         }
-
-        // Remove any whitespace
         String cleaned = base64String.trim();
-
-        // Calculate padding needed
         int paddingNeeded = 4 - (cleaned.length() % 4);
-
-        // Add padding if needed (but not if already divisible by 4)
         if (paddingNeeded > 0 && paddingNeeded < 4) {
             cleaned = cleaned + "=".repeat(paddingNeeded);
             ServicesLogger.LOGGER.info("Added " + paddingNeeded + " padding characters");
@@ -119,13 +104,11 @@ public class WebAuthnVerificationService {
         try {
             ServicesLogger.LOGGER.info("Starting signature verification");
 
-            // 1. Validate challenge first
             if (!validateChallenge(request.clientDataJSON, expectedChallenge)) {
                 ServicesLogger.LOGGER.warn("Challenge validation failed");
                 return false;
             }
 
-            // 2. Validate required fields
             if (request.signature == null || request.signature.isEmpty()) {
                 ServicesLogger.LOGGER.warn("Signature is null or empty");
                 return false;
@@ -136,8 +119,6 @@ public class WebAuthnVerificationService {
                 return false;
             }
 
-            // 3. Reconstruct signed data according to WebAuthn spec
-            // signedData = authenticatorData || hash(clientDataJSON)
             byte[] clientDataBytes = Base64.getUrlDecoder().decode(request.clientDataJSON);
             byte[] clientDataHash = MessageDigest.getInstance("SHA-256").digest(clientDataBytes);
             byte[] authenticatorData = Base64.getUrlDecoder().decode(request.authenticatorData);
@@ -148,7 +129,6 @@ public class WebAuthnVerificationService {
 
             ServicesLogger.LOGGER.info("Signed data length: " + signedData.length);
 
-            // 4. Parse stored public key với Base64 padding fix
             try {
                 String fixedPublicKey = fixBase64Padding(credential.publicKey);
                 byte[] publicKeyBytes = Base64.getDecoder().decode(fixedPublicKey);
@@ -158,7 +138,6 @@ public class WebAuthnVerificationService {
 
                 ServicesLogger.LOGGER.info("Public key algorithm: " + publicKey.getAlgorithm());
 
-                // 5. Verify signature với Base64 padding fix
                 String fixedSignature = fixBase64Padding(request.signature);
                 byte[] signatureBytes = Base64.getUrlDecoder().decode(fixedSignature);
 
@@ -172,8 +151,6 @@ public class WebAuthnVerificationService {
 
             } catch (Exception keyError) {
                 ServicesLogger.LOGGER.warn("Key/signature processing failed, this is expected for mock data: " + keyError.getMessage());
-
-                // For testing với mock data, return true if challenge validation passed
                 ServicesLogger.LOGGER.info("Using mock signature verification for testing");
                 return true;
             }

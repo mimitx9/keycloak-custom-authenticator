@@ -14,9 +14,6 @@ public class AllowedCredential {
     @JsonProperty("transports")
     public List<String> transports;
 
-    public AllowedCredential() {
-    }
-
     public AllowedCredential(String credentialId, List<String> transports) {
         this.id = credentialId;
         this.transports = transports;
