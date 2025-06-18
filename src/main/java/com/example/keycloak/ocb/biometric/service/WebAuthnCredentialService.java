@@ -159,7 +159,6 @@ public class WebAuthnCredentialService {
                     return user.credentialManager().removeStoredCredentialById(credential.getId());
                 }
             } catch (Exception e) {
-                // Skip invalid credential
             }
         }
 

@@ -1,26 +1,26 @@
 package com.example.keycloak.ocb.biometric;
 
 import com.example.keycloak.model.*;
-import com.example.keycloak.ocb.biometric.service.*;
+import com.example.keycloak.ocb.biometric.service.ChallengeCacheService;
+import com.example.keycloak.ocb.biometric.service.ChallengeService;
+import com.example.keycloak.ocb.biometric.service.WebAuthnCredentialService;
+import com.example.keycloak.ocb.biometric.service.WebAuthnVerificationService;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
 import org.keycloak.TokenVerifier;
-import org.keycloak.models.*;
-import org.keycloak.services.managers.AppAuthManager;
-import org.keycloak.services.managers.AuthenticationManager;
-import org.keycloak.common.ClientConnection;
-import org.keycloak.headers.SecurityHeadersProvider;
-import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.models.KeyManager;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.ServicesLogger;
 import org.keycloak.services.Urls;
-import org.keycloak.services.managers.ResourceAdminManager;
-
-import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.*;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Path("/realms/{realm}/mobile-biometric")
 public class MobileBiometricResource {
@@ -36,6 +36,50 @@ public class MobileBiometricResource {
     }
 
     @GET
+    @Path("/debug")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response debug(@PathParam("realm") String realmName) {
+        try {
+            Map<String, Object> debugInfo = new HashMap<>();
+            debugInfo.put("pathRealmName", realmName);
+
+            // Test realm lookup
+            RealmModel realm = session.realms().getRealmByName(realmName);
+            debugInfo.put("realmFound", realm != null);
+
+            if (realm != null) {
+                debugInfo.put("realmDisplayName", realm.getDisplayName());
+                debugInfo.put("realmEnabled", realm.isEnabled());
+            }
+
+            // Test context realm
+            RealmModel contextRealm = session.getContext().getRealm();
+            debugInfo.put("contextRealmFound", contextRealm != null);
+
+            if (contextRealm != null) {
+                debugInfo.put("contextRealmName", contextRealm.getName());
+            }
+
+            // List all realms
+            List<String> allRealms = session.realms().getRealmsStream()
+                    .map(RealmModel::getName)
+                    .collect(Collectors.toList());
+            debugInfo.put("allRealms", allRealms);
+
+            debugInfo.put("status", "extension working");
+            debugInfo.put("timestamp", System.currentTimeMillis());
+
+            return Response.ok(debugInfo).build();
+
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            error.put("stackTrace", Arrays.toString(e.getStackTrace()));
+            return Response.status(500).entity(error).build();
+        }
+    }
+
+    @GET
     @Path("/register/init")
     @Produces(MediaType.APPLICATION_JSON)
     public Response initRegistration(@PathParam("realm") String realmName,
@@ -43,10 +87,14 @@ public class MobileBiometricResource {
                                      @Context HttpHeaders headers) {
 
         try {
-            RealmModel realm = session.getContext().getRealm();
+            // Fix: Lấy realm từ realmName path parameter
+            RealmModel realm = session.realms().getRealmByName(realmName);
             if (realm == null) {
-                return Response.status(404).entity("{\"error\":\"Realm not found\"}").build();
+                return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
             }
+
+            // Set realm context
+            session.getContext().setRealm(realm);
 
             UserModel user = validateToken(authHeader, realm);
             if (user == null) {
@@ -58,7 +106,7 @@ public class MobileBiometricResource {
             options.userid = java.util.Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(user.getId().getBytes());
             options.username = user.getUsername();
-            options.signatureAlgorithms = Arrays.asList(-7, -257); // ES256, RS256
+            options.signatureAlgorithms = Arrays.asList(-7, -257);
             options.rpEntityName = realm.getDisplayName() != null ? realm.getDisplayName() : realm.getName();
             options.rpId = getRealmHostname(realm);
             options.createTimeout = 60000;
@@ -66,19 +114,15 @@ public class MobileBiometricResource {
             options.authenticatorAttachment = "platform";
             options.userVerificationRequirement = "required";
             options.requireResidentKey = "false";
-
-            // Store challenge in user session
             storeChallenge(user, options.challenge);
 
             return Response.ok(options).build();
 
         } catch (Exception e) {
             ServicesLogger.LOGGER.error("Error in registration init", e);
-            return Response.status(500).entity("{\"error\":\"Internal server error\"}").build();
+            return Response.status(500).entity("{\"error\":\"Internal server error: " + e.getMessage() + "\"}").build();
         }
     }
-
-// Cập nhật trong MobileBiometricResource.java
 
     @POST
     @Path("/register/complete")
@@ -89,7 +133,15 @@ public class MobileBiometricResource {
                                          @HeaderParam("Authorization") String authHeader) {
 
         try {
-            RealmModel realm = session.getContext().getRealm();
+            // Fix: Lấy realm từ realmName path parameter
+            RealmModel realm = session.realms().getRealmByName(realmName);
+            if (realm == null) {
+                return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
+            }
+
+            // Set realm context
+            session.getContext().setRealm(realm);
+
             UserModel user = validateToken(authHeader, realm);
             if (user == null) {
                 return Response.status(401).entity("{\"error\":\"Invalid token\"}").build();
@@ -105,7 +157,6 @@ public class MobileBiometricResource {
             // Extract public key from attestation
             String publicKey = verificationService.extractPublicKeyFromAttestation(request.attestationObject);
 
-            // Create credential data
             CredentialData credentialData = new CredentialData();
             credentialData.publicKey = publicKey;
             credentialData.label = request.authenticatorLabel != null ?
@@ -115,6 +166,7 @@ public class MobileBiometricResource {
             credentialData.createdAt = System.currentTimeMillis();
             credentialData.algorithm = -7; // ES256 default
 
+            // Save credential
             String savedCredentialId = credentialService.saveCredential(user, request.publicKeyCredentialId, credentialData);
 
             // Clear challenge
@@ -123,13 +175,13 @@ public class MobileBiometricResource {
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
             response.put("credentialId", request.publicKeyCredentialId);
-            response.put("keycloakCredentialId", savedCredentialId); // ID trong Keycloak store
+            response.put("keycloakCredentialId", savedCredentialId);
 
             return Response.ok(response).build();
 
         } catch (Exception e) {
             ServicesLogger.LOGGER.error("Error in registration complete", e);
-            return Response.status(500).entity("{\"error\":\"Internal server error\"}").build();
+            return Response.status(500).entity("{\"error\":\"Internal server error: " + e.getMessage() + "\"}").build();
         }
     }
 
@@ -140,10 +192,12 @@ public class MobileBiometricResource {
                                        @QueryParam("username") String username) {
 
         try {
-            RealmModel realm = session.getContext().getRealm();
+            RealmModel realm = session.realms().getRealmByName(realmName);
             if (realm == null) {
-                return Response.status(404).entity("{\"error\":\"Realm not found\"}").build();
+                return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
             }
+
+            session.getContext().setRealm(realm);
 
             UserModel user = session.users().getUserByUsername(realm, username);
             if (user == null) {
@@ -162,13 +216,13 @@ public class MobileBiometricResource {
             options.userVerificationRequirement = "required";
             options.timeout = 60000;
 
-            storeAuthChallenge(options.challenge, username);
+            ChallengeCacheService.storeChallengeForUser(options.challenge, username, user.getId());
 
             return Response.ok(options).build();
 
         } catch (Exception e) {
             ServicesLogger.LOGGER.error("Error in authentication init", e);
-            return Response.status(500).entity("{\"error\":\"Internal server error\"}").build();
+            return Response.status(500).entity("{\"error\":\"Internal server error: " + e.getMessage() + "\"}").build();
         }
     }
 
@@ -177,26 +231,42 @@ public class MobileBiometricResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response completeAuthentication(@PathParam("realm") String realmName,
+                                           @QueryParam("username") String username,
                                            AuthenticationRequest request) {
 
         try {
-            RealmModel realm = session.getContext().getRealm();
+            RealmModel realm = session.realms().getRealmByName(realmName);
+            if (realm == null) {
+                return Response.status(404).entity("{\"error\":\"Realm not found: " + realmName + "\"}").build();
+            }
 
-            // Get stored challenge and username
-            String[] challengeData = getStoredAuthChallenge();
+            session.getContext().setRealm(realm);
+
+            ServicesLogger.LOGGER.info("Looking for challenge for credential: " + request.credentialId);
+            String userId = null;
+
+            UserModel credentialUser = session.users().getUserByUsername(realm, username);
+            if (credentialUser != null) {
+                userId = credentialUser.getId();
+                ServicesLogger.LOGGER.info("Found user by provided username: " + username);
+            }
+
+            ServicesLogger.LOGGER.info("Found user by credential: " + username);
+
+            // Get challenge from cache
+            ChallengeCacheService.ChallengeData challengeData = ChallengeCacheService.getAuthChallenge(userId);
             if (challengeData == null) {
-                return Response.status(400).entity("{\"error\":\"Invalid session\"}").build();
+                challengeData = ChallengeCacheService.getAuthChallengeByUsername(username);
             }
 
-            String expectedChallenge = challengeData[0];
-            String username = challengeData[1];
-
-            UserModel user = session.users().getUserByUsername(realm, username);
-            if (user == null) {
-                return Response.status(404).entity("{\"error\":\"User not found\"}").build();
+            if (challengeData == null) {
+                return Response.status(400).entity("{\"error\":\"Invalid session or expired challenge\"}").build();
             }
 
-            CredentialData credential = credentialService.getCredential(user, request.credentialId);
+            String expectedChallenge = challengeData.challenge;
+            ServicesLogger.LOGGER.info("Found challenge in cache: " + expectedChallenge);
+
+            CredentialData credential = credentialService.getCredential(credentialUser, request.credentialId);
             if (credential == null) {
                 return Response.status(404).entity("{\"error\":\"Credential not found\"}").build();
             }
@@ -205,15 +275,14 @@ public class MobileBiometricResource {
                 return Response.status(401).entity("{\"error\":\"Authentication failed\"}").build();
             }
 
-            TokenResponse tokenResponse = createTokens(user, realm);
-
-            clearAuthChallenge();
+            TokenResponse tokenResponse = createTokens(credentialUser, realm);
+            ChallengeCacheService.clearAuthChallenge(userId);
 
             return Response.ok(tokenResponse).build();
 
         } catch (Exception e) {
             ServicesLogger.LOGGER.error("Error in authentication complete", e);
-            return Response.status(500).entity("{\"error\":\"Internal server error\"}").build();
+            return Response.status(500).entity("{\"error\":\"Internal server error: " + e.getMessage() + "\"}").build();
         }
     }
 
@@ -229,11 +298,7 @@ public class MobileBiometricResource {
                 return null;
             }
 
-            TokenVerifier<AccessToken> verifier = TokenVerifier.create(tokenString, AccessToken.class)
-                    .realmUrl(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()))
-                    .checkActive(true)
-                    .checkTokenType(true)
-                    .publicKey(activeKey.getPublicKey());
+            TokenVerifier<AccessToken> verifier = TokenVerifier.create(tokenString, AccessToken.class).realmUrl(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName())).checkActive(true).checkTokenType(true).publicKey(activeKey.getPublicKey());
 
             AccessToken token = verifier.verify().getToken();
             return session.users().getUserById(realm, token.getSubject());
@@ -244,8 +309,8 @@ public class MobileBiometricResource {
         }
     }
 
-
     private String getRealmHostname(RealmModel realm) {
+        // Get hostname from current request context
         UriInfo uriInfo = session.getContext().getUri();
         if (uriInfo != null) {
             return uriInfo.getBaseUri().getHost();
@@ -266,24 +331,7 @@ public class MobileBiometricResource {
         user.removeAttribute("webauthn.temp.challenge");
     }
 
-    private void storeAuthChallenge(String challenge, String username) {
-        session.setAttribute("auth.challenge", challenge);
-        session.setAttribute("auth.username", username);
-    }
-
-    private String[] getStoredAuthChallenge() {
-        String challenge = (String) session.getAttribute("auth.challenge");
-        String username = (String) session.getAttribute("auth.username");
-        return (challenge != null && username != null) ? new String[]{challenge, username} : null;
-    }
-
-    private void clearAuthChallenge() {
-        session.removeAttribute("auth.challenge");
-        session.removeAttribute("auth.username");
-    }
-
     private TokenResponse createTokens(UserModel user, RealmModel realm) {
-
         TokenResponse response = new TokenResponse();
         response.accessToken = "mock_access_token_" + user.getId();
         response.refreshToken = "mock_refresh_token_" + user.getId();
