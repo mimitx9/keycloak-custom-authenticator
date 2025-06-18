@@ -8,6 +8,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.WebAuthnCredentialModel;
 import org.keycloak.models.credential.dto.WebAuthnCredentialData;
 import org.keycloak.models.credential.dto.WebAuthnSecretData;
+import org.keycloak.services.ServicesLogger;
 import org.keycloak.util.JsonSerialization;
 
 import java.util.*;
@@ -216,5 +217,45 @@ public class WebAuthnCredentialService {
         }
 
         return null;
+    }
+
+    public void updateCredentialCounter(UserModel user, String credentialId, long newCounter) {
+        try {
+            List<CredentialModel> allCredentials = user.credentialManager().getStoredCredentialsStream().toList();
+            List<CredentialModel> webAuthnCredentials = allCredentials.stream()
+                    .filter(cred -> CREDENTIAL_TYPE.equals(cred.getType()))
+                    .toList();
+
+            for (CredentialModel credential : webAuthnCredentials) {
+                try {
+                    WebAuthnCredentialData credData = JsonSerialization.readValue(
+                            credential.getCredentialData(), WebAuthnCredentialData.class);
+
+                    if (credentialId.equals(credData.getCredentialId())) {
+                        // Update counter
+                        WebAuthnCredentialData updatedCredData = new WebAuthnCredentialData(
+                                credData.getAaguid(),
+                                credData.getCredentialId(),
+                                newCounter,
+                                credData.getAttestationStatement(),
+                                credData.getCredentialPublicKey(),
+                                credData.getAttestationStatementFormat(),
+                                credData.getTransports()
+                        );
+
+                        credential.setCredentialData(JsonSerialization.writeValueAsString(updatedCredData));
+                        user.credentialManager().updateStoredCredential(credential);
+
+                        ServicesLogger.LOGGER.info("Updated counter for credential " + credentialId + " to " + newCounter);
+                        return;
+                    }
+                } catch (Exception e) {
+                    ServicesLogger.LOGGER.error("Failed to update credential counter", e);
+                }
+            }
+
+        } catch (Exception e) {
+            ServicesLogger.LOGGER.error("Failed to update credential counter", e);
+        }
     }
 }

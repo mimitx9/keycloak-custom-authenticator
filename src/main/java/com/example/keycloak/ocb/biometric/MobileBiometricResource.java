@@ -130,6 +130,7 @@ public class MobileBiometricResource {
             String publicKey = verificationService.extractPublicKeyFromAttestation(request.attestationObject);
 
             CredentialData credentialData = new CredentialData();
+            credentialData.credentialId = request.publicKeyCredentialId; // Set credential ID từ request
             credentialData.publicKey = publicKey;
             credentialData.label = request.authenticatorLabel != null ?
                     request.authenticatorLabel : "Mobile Device";
@@ -225,7 +226,6 @@ public class MobileBiometricResource {
 
             ServicesLogger.LOGGER.info("Found user by credential: " + username);
 
-            // Get challenge from cache
             ChallengeCacheService.ChallengeData challengeData = ChallengeCacheService.getAuthChallenge(userId);
             if (challengeData == null) {
                 challengeData = ChallengeCacheService.getAuthChallengeByUsername(username);
@@ -245,6 +245,10 @@ public class MobileBiometricResource {
 
             if (!verificationService.verifySignature(request, credential, expectedChallenge)) {
                 return Response.status(401).entity("{\"error\":\"Authentication failed\"}").build();
+            }
+
+            if (credential.signatureCounter != null) {
+                credentialService.updateCredentialCounter(credentialUser, request.credentialId, credential.signatureCounter);
             }
 
             TokenResponse tokenResponse = createTokens(credentialUser, realm);

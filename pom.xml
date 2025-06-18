@@ -64,7 +64,6 @@
             <artifactId>json</artifactId>
             <version>20230618</version>
         </dependency>
-        <!-- Keycloak model infinispan -->
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-model-infinispan</artifactId>

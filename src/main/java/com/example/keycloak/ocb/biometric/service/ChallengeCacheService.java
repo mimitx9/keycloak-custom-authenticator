@@ -40,6 +40,11 @@ public class ChallengeCacheService {
         }
     }
 
+    // ========================= REGISTRATION METHODS =========================
+
+    /**
+     * Store registration challenge for user
+     */
     public static void storeRegistrationChallenge(String challenge, String username, String userId) {
         String challengeKey = "register:" + userId;
         ChallengeData data = new ChallengeData(challenge, username, userId);
@@ -47,6 +52,9 @@ public class ChallengeCacheService {
         ServicesLogger.LOGGER.info("Stored registration challenge in cache for user: " + username);
     }
 
+    /**
+     * Retrieve registration challenge by user ID
+     */
     public static ChallengeData getRegistrationChallenge(String userId) {
         String challengeKey = "register:" + userId;
         ChallengeData data = challengeCache.get(challengeKey);
@@ -66,6 +74,9 @@ public class ChallengeCacheService {
         return null;
     }
 
+    /**
+     * Retrieve registration challenge by username (fallback)
+     */
     public static ChallengeData getRegistrationChallengeByUsername(String username) {
         // Search cache for username match with register prefix
         for (String key : challengeCache.keySet()) {
@@ -82,6 +93,9 @@ public class ChallengeCacheService {
         return null;
     }
 
+    /**
+     * Clear registration challenge for user
+     */
     public static void clearRegistrationChallenge(String userId) {
         String challengeKey = "register:" + userId;
         ChallengeData removed = challengeCache.remove(challengeKey);
