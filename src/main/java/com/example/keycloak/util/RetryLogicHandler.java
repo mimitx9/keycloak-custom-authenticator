@@ -3,6 +3,7 @@ package com.example.keycloak.util;
 import org.infinispan.Cache;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.UserModel;
 import org.jboss.logging.Logger;
 
@@ -18,7 +19,7 @@ public class RetryLogicHandler {
     private static final String USER_ATTR_LOCKED_AT = "lockedAt";
     private static final String USER_ATTR_LOCK_DURATION = "lockDuration";
 
-    private static final int[] LOCKOUT_DURATIONS = {
+    private static final int[] DEFAULT_LOCKOUT_DURATIONS = {
             0,    // 1st no lockout
             0,    // 2nd no lockout
             5,    // 3rd 5 minutes
@@ -27,7 +28,7 @@ public class RetryLogicHandler {
             1440  // 6+  24 hours (1440 minutes)
     };
 
-    private static final long AUTO_RESET_PERIOD = 24 * 60 * 60 * 1000L;
+    private static final long DEFAULT_AUTO_RESET_PERIOD = 24 * 60 * 60 * 1000L; // 24 hours
 
     public static LockoutResult recordFailedAttempt(AuthenticationFlowContext context,
                                                     String identifier,
@@ -47,12 +48,12 @@ public class RetryLogicHandler {
                 failData = new FailCountData();
             }
 
-            checkAndResetIfNeeded(failData, cache, cacheKey);
+            checkAndResetIfNeeded(failData, cache, cacheKey, context);
 
             failData.incrementAttempts();
             failData.setLastAttemptAt(System.currentTimeMillis());
 
-            int lockoutMinutes = getLockoutDuration(failData.getAttemptCount());
+            int lockoutMinutes = getLockoutDuration(failData.getAttemptCount(), context);
 
             LockoutResult result = new LockoutResult();
             result.setAttemptCount(failData.getAttemptCount());
@@ -244,11 +245,14 @@ public class RetryLogicHandler {
 
     private static void checkAndResetIfNeeded(FailCountData failData,
                                               Cache<String, FailCountData> cache,
-                                              String cacheKey) {
+                                              String cacheKey,
+                                              AuthenticationFlowContext context) {
         if (failData.getLastAttemptAt() > 0) {
             long currentTime = System.currentTimeMillis();
-            if (currentTime - failData.getLastAttemptAt() >= AUTO_RESET_PERIOD) {
-                logger.infof("Auto-resetting failed attempts after 24 hours for cache key: %s", cacheKey);
+            long autoResetPeriod = getAutoResetPeriod(context);
+
+            if (currentTime - failData.getLastAttemptAt() >= autoResetPeriod) {
+                logger.infof("Auto-resetting failed attempts after configured period for cache key: %s", cacheKey);
                 cache.remove(cacheKey);
                 failData.reset();
             }
@@ -259,14 +263,52 @@ public class RetryLogicHandler {
         return type + "_" + username;
     }
 
-    private static int getLockoutDuration(int attemptCount) {
-        if (attemptCount <= 2) {
-            return 0;
-        } else if (attemptCount >= 6) {
-            return LOCKOUT_DURATIONS[5];
-        } else {
-            return LOCKOUT_DURATIONS[attemptCount - 1];
+    private static int getLockoutDuration(int attemptCount, AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+
+        try {
+            switch (attemptCount) {
+                case 1:
+                case 2:
+                    return 0;
+                case 3:
+                    return Integer.parseInt(getConfigValue(config, "lockoutDuration3", "5"));
+                case 4:
+                    return Integer.parseInt(getConfigValue(config, "lockoutDuration4", "10"));
+                case 5:
+                    return Integer.parseInt(getConfigValue(config, "lockoutDuration5", "20"));
+                default:
+                    return Integer.parseInt(getConfigValue(config, "lockoutDuration6Plus", "1440"));
+            }
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid lockout duration config, using defaults: %s", e.getMessage());
+            // Fallback to default values
+            if (attemptCount <= 2) {
+                return 0;
+            } else if (attemptCount >= 6) {
+                return DEFAULT_LOCKOUT_DURATIONS[5];
+            } else {
+                return DEFAULT_LOCKOUT_DURATIONS[attemptCount - 1];
+            }
         }
+    }
+
+    private static long getAutoResetPeriod(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        try {
+            String minutes = getConfigValue(config, "autoResetPeriodMinutes", "1440");
+            return Long.parseLong(minutes) * 60 * 1000L; // Convert to milliseconds
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid auto reset period config, using default: %s", e.getMessage());
+            return DEFAULT_AUTO_RESET_PERIOD;
+        }
+    }
+
+    private static String getConfigValue(AuthenticatorConfigModel config, String key, String defaultValue) {
+        if (config == null || config.getConfig() == null) {
+            return defaultValue;
+        }
+        return config.getConfig().getOrDefault(key, defaultValue);
     }
 
     private static LockoutResult createUnlockedResult(int attemptCount) {

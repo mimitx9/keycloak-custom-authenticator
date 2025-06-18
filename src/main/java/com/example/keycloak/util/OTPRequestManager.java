@@ -3,6 +3,7 @@ package com.example.keycloak.util;
 import org.infinispan.Cache;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.UserModel;
 import org.jboss.logging.Logger;
 
@@ -11,15 +12,15 @@ import java.io.Serializable;
 public class OTPRequestManager {
 
     private static final Logger logger = Logger.getLogger(OTPRequestManager.class);
-    private static final long OTP_VALIDITY_MS = 3 * 60 * 1000L;
     private static final String OTP_SENT_TIME_PREFIX = "otpSentTime_";
     private static final String CACHE_NAME = "otpBizconnectFailCount";
     private static final String OTP_REQ_PREFIX = "otpReq_";
     private static final String OTP_COOLDOWN_PREFIX = "otpCool_";
 
-    private static final int MAX_REQUESTS_PER_HOUR = 5;
-    private static final long COOLDOWN_MS = 30 * 1000L;
-    private static final long RESET_PERIOD_MS = 60 * 60 * 1000L;
+    private static final long DEFAULT_OTP_VALIDITY_MS = 3 * 60 * 1000L;
+    private static final long DEFAULT_COOLDOWN_MS = 30 * 1000L;
+    private static final long DEFAULT_RESET_PERIOD_MS = 60 * 60 * 1000L;
+    private static final int DEFAULT_MAX_REQUESTS_PER_HOUR = 5;
 
     public static boolean canRequestOTP(AuthenticationFlowContext context, UserModel user) {
         try {
@@ -33,16 +34,17 @@ public class OTPRequestManager {
 
             long currentTime = System.currentTimeMillis();
             if (requestData.getResetTime() > 0 &&
-                    currentTime - requestData.getResetTime() >= RESET_PERIOD_MS) {
+                    currentTime - requestData.getResetTime() >= getResetPeriodMs(context)) {
 
                 logger.infof("Resetting OTP request count for user: %s", user.getUsername());
                 cache.remove(cacheKey);
                 return true;
             }
 
-            boolean canRequest = requestData.getRequestCount() < MAX_REQUESTS_PER_HOUR;
-            logger.debugf("OTP request check for user %s: count=%d, canRequest=%s",
-                    user.getUsername(), requestData.getRequestCount(), canRequest);
+            int maxRequests = getMaxRequestsPerPeriod(context);
+            boolean canRequest = requestData.getRequestCount() < maxRequests;
+            logger.debugf("OTP request check for user %s: count=%d, max=%d, canRequest=%s",
+                    user.getUsername(), requestData.getRequestCount(), maxRequests, canRequest);
 
             return canRequest;
 
@@ -90,10 +92,11 @@ public class OTPRequestManager {
             }
 
             long elapsed = System.currentTimeMillis() - lastSentTime;
-            boolean canResend = elapsed >= COOLDOWN_MS;
+            long cooldownMs = getCooldownMs(context);
+            boolean canResend = elapsed >= cooldownMs;
 
-            logger.debugf("OTP resend check for user %s: elapsed=%dms, canResend=%s",
-                    user.getUsername(), elapsed, canResend);
+            logger.debugf("OTP resend check for user %s: elapsed=%dms, cooldown=%dms, canResend=%s",
+                    user.getUsername(), elapsed, cooldownMs, canResend);
 
             return canResend;
 
@@ -114,7 +117,8 @@ public class OTPRequestManager {
             }
 
             long elapsed = System.currentTimeMillis() - lastSentTime;
-            return Math.max(0, (COOLDOWN_MS - elapsed) / 1000);
+            long cooldownMs = getCooldownMs(context);
+            return Math.max(0, (cooldownMs - elapsed) / 1000);
 
         } catch (Exception e) {
             logger.warnf("Cache error during cooldown check, returning 0: %s", e.getMessage());
@@ -162,21 +166,21 @@ public class OTPRequestManager {
 
             OTPRequestData requestData = cache.get(cacheKey);
             if (requestData == null) {
-                return MAX_REQUESTS_PER_HOUR;
+                return getMaxRequestsPerPeriod(context);
             }
 
             long currentTime = System.currentTimeMillis();
 
             if (requestData.getResetTime() > 0 &&
-                    currentTime - requestData.getResetTime() >= RESET_PERIOD_MS) {
-                return MAX_REQUESTS_PER_HOUR;
+                    currentTime - requestData.getResetTime() >= getResetPeriodMs(context)) {
+                return getMaxRequestsPerPeriod(context);
             }
 
-            return Math.max(0, MAX_REQUESTS_PER_HOUR - requestData.getRequestCount());
-
+            int maxRequests = getMaxRequestsPerPeriod(context);
+            return Math.max(0, maxRequests - requestData.getRequestCount());
         } catch (Exception e) {
             logger.warnf("Cache error during remaining requests check, returning max: %s", e.getMessage());
-            return MAX_REQUESTS_PER_HOUR;
+            return getMaxRequestsPerPeriod(context);
         }
     }
 
@@ -189,10 +193,11 @@ public class OTPRequestManager {
 
     public static void clearUserOTPData(AuthenticationFlowContext context, UserModel user) {
         try {
+            String timeCacheKey = OTP_SENT_TIME_PREFIX + user.getUsername();
             Cache<String, Object> cache = getCache(context);
             String reqCacheKey = OTP_REQ_PREFIX + user.getUsername();
             String cooldownCacheKey = OTP_COOLDOWN_PREFIX + user.getUsername();
-
+            cache.remove(timeCacheKey);
             cache.remove(reqCacheKey);
             cache.remove(cooldownCacheKey);
 
@@ -254,7 +259,8 @@ public class OTPRequestManager {
             }
 
             long currentTime = System.currentTimeMillis();
-            boolean isValid = (currentTime - sentTime) <= OTP_VALIDITY_MS;
+            long validityMs = getOTPValidityMs(context);
+            boolean isValid = (currentTime - sentTime) <= validityMs;
 
             if (!isValid) {
                 cache.remove(cacheKey);
@@ -282,7 +288,8 @@ public class OTPRequestManager {
             long currentTime = System.currentTimeMillis();
             long elapsed = currentTime - sentTime;
 
-            return Math.max(0, (OTP_VALIDITY_MS - elapsed) / 1000);
+            long validityMs = getOTPValidityMs(context);
+            return Math.max(0, (validityMs - elapsed) / 1000);
 
         } catch (Exception e) {
             logger.warnf("Cache error during OTP remaining time check: %s", e.getMessage());
@@ -303,7 +310,8 @@ public class OTPRequestManager {
             long currentTime = System.currentTimeMillis();
             long elapsed = currentTime - sentTime;
 
-            long remainingMs = OTP_VALIDITY_MS - elapsed;
+            long validityMs = getOTPValidityMs(context);
+            long remainingMs = validityMs - elapsed;
 
             if (remainingMs <= 0) {
                 return 0;
@@ -313,7 +321,7 @@ public class OTPRequestManager {
 
         } catch (Exception e) {
             logger.warnf("Cache error during OTP remaining time check: %s", e.getMessage());
-            return 180;
+            return getOTPValidityMs(context) / 1000;
         }
     }
 
@@ -329,5 +337,56 @@ public class OTPRequestManager {
             logger.warnf("Cache error during OTP sent time retrieval: %s", e.getMessage());
             return 0;
         }
+    }
+
+    private static long getOTPValidityMs(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        try {
+            String seconds = getConfigValue(config, "otpValiditySeconds", "180");
+            return Long.parseLong(seconds) * 1000L;
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid OTP validity config, using default: %s", e.getMessage());
+            return DEFAULT_OTP_VALIDITY_MS;
+        }
+    }
+
+    private static long getCooldownMs(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        try {
+            String seconds = getConfigValue(config, "otpResendCooldownSeconds", "30");
+            return Long.parseLong(seconds) * 1000L;
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid cooldown config, using default: %s", e.getMessage());
+            return DEFAULT_COOLDOWN_MS;
+        }
+    }
+
+    private static long getResetPeriodMs(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        try {
+            String minutes = getConfigValue(config, "otpRequestResetPeriodMinutes", "60");
+            return Long.parseLong(minutes) * 60 * 1000L; // Convert to milliseconds
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid reset period config, using default: %s", e.getMessage());
+            return DEFAULT_RESET_PERIOD_MS;
+        }
+    }
+
+    private static int getMaxRequestsPerPeriod(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        try {
+            String maxRequests = getConfigValue(config, "maxOtpRequestsPerPeriod", "5");
+            return Integer.parseInt(maxRequests);
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid max requests config, using default: %s", e.getMessage());
+            return DEFAULT_MAX_REQUESTS_PER_HOUR;
+        }
+    }
+
+    private static String getConfigValue(AuthenticatorConfigModel config, String key, String defaultValue) {
+        if (config == null || config.getConfig() == null) {
+            return defaultValue;
+        }
+        return config.getConfig().getOrDefault(key, defaultValue);
     }
 }
