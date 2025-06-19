@@ -291,7 +291,7 @@ public class OTPAuthenticator implements Authenticator {
             String error = jsonResponse.get("error").asText();
             return "0".equals(error);
         }
-
+        logger.errorf("Failed to send OTP, response code: %d, body: %s", response.statusCode(), response.body());
         return false;
     }
 
@@ -334,7 +334,7 @@ public class OTPAuthenticator implements Authenticator {
 
             return "0".equals(error);
         }
-
+        logger.errorf("Failed to verify OTP, response code: %d, body: %s", response.statusCode(), response.body());
         return false;
     }
 
