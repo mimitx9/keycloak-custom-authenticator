@@ -49,6 +49,13 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                 ApiResponse userVerifyResponse = apiClient.verifyUser(username, password);
 
+                authSession.setAuthNote("EXT_API_RESPONSE_CODE", userVerifyResponse.getCode() != null ? userVerifyResponse.getCode() : "");
+                authSession.setAuthNote("EXT_API_RESPONSE_MESSAGE", userVerifyResponse.getMessage() != null ? userVerifyResponse.getMessage() : "");
+                authSession.setAuthNote("EXT_API_SUCCESS", String.valueOf(userVerifyResponse.isSuccess()));
+
+                logger.infof("User API Response - Code: %s, Message: %s, Success: %s",
+                        userVerifyResponse.getCode(), userVerifyResponse.getMessage(), userVerifyResponse.isSuccess());
+
                 if (!userVerifyResponse.isSuccess()) {
                     logger.warnf("User verification failed for %s. Code: %s, Message: %s",
                             username, userVerifyResponse.getCode(), userVerifyResponse.getMessage());
@@ -60,6 +67,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                     Response challengeResponse = context.form()
                             .setError(errorMessage)
+                            .setAttribute("extApiResponseCode", userVerifyResponse.getCode())
+                            .setAttribute("extApiResponseMessage", userVerifyResponse.getMessage())
+                            .setAttribute("extApiSuccess", String.valueOf(userVerifyResponse.isSuccess()))
                             .createLoginUsernamePassword();
                     context.challenge(challengeResponse);
                     return;
@@ -72,6 +82,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     logger.error("No user info returned from successful API call");
                     Response challengeResponse = context.form()
                             .setError("Unable to retrieve user information. Please contact administrator.")
+                            .setAttribute("extApiResponseCode", userVerifyResponse.getCode())
+                            .setAttribute("extApiResponseMessage", "No user info in response")
+                            .setAttribute("extApiSuccess", "false")
                             .createLoginUsernamePassword();
                     context.challenge(challengeResponse);
                     return;
@@ -82,6 +95,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     logger.error("No customerNumber found in user verification response");
                     Response challengeResponse = context.form()
                             .setError("Unable to retrieve customer information. Please contact administrator.")
+                            .setAttribute("extApiResponseCode", userVerifyResponse.getCode())
+                            .setAttribute("extApiResponseMessage", "No customerNumber in response")
+                            .setAttribute("extApiSuccess", "false")
                             .createLoginUsernamePassword();
                     context.challenge(challengeResponse);
                     return;
@@ -113,6 +129,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                         config.getChannelId()
                 );
 
+                // Save transaction info and user info for later use
                 authSession.setAuthNote("TRANSACTION_ID", transactionId);
                 authSession.setAuthNote("USER_ID", userId);
                 authSession.setAuthNote("CUSTOMER_NUMBER", customerNumber);
@@ -122,6 +139,13 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     authSession.setAuthNote("USER_INFO_JSON",
                             new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(userInfo));
                 }
+
+                authSession.setAuthNote("OTP_API_RESPONSE_CODE", otpResponse.getCode() != null ? otpResponse.getCode() : "");
+                authSession.setAuthNote("OTP_API_RESPONSE_MESSAGE", otpResponse.getMessage() != null ? otpResponse.getMessage() : "");
+                authSession.setAuthNote("OTP_API_SUCCESS", String.valueOf(otpResponse.isSuccess()));
+
+                logger.infof("OTP API Response - Code: %s, Message: %s, Success: %s",
+                        otpResponse.getCode(), otpResponse.getMessage(), otpResponse.isSuccess());
 
                 if (!otpResponse.isSuccess()) {
                     logger.warnf("OTP creation failed. Code: %s, Message: %s",
@@ -134,6 +158,12 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                     Response challengeResponse = context.form()
                             .setError(errorMessage)
+                            .setAttribute("extApiResponseCode", userVerifyResponse.getCode())
+                            .setAttribute("extApiResponseMessage", userVerifyResponse.getMessage())
+                            .setAttribute("extApiSuccess", String.valueOf(userVerifyResponse.isSuccess()))
+                            .setAttribute("otpApiResponseCode", otpResponse.getCode())
+                            .setAttribute("otpApiResponseMessage", otpResponse.getMessage())
+                            .setAttribute("otpApiSuccess", String.valueOf(otpResponse.isSuccess()))
                             .createLoginUsernamePassword();
                     context.challenge(challengeResponse);
                     return;
@@ -144,17 +174,35 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                         .setInfo("OTP has been sent. Please enter the OTP code.")
                         .setAttribute("showOtpField", true)
                         .setAttribute("username", username)
+                        .setAttribute("extApiResponseCode", userVerifyResponse.getCode())
+                        .setAttribute("extApiResponseMessage", userVerifyResponse.getMessage())
+                        .setAttribute("extApiSuccess", String.valueOf(userVerifyResponse.isSuccess()))
+                        .setAttribute("otpApiResponseCode", otpResponse.getCode())
+                        .setAttribute("otpApiResponseMessage", otpResponse.getMessage())
+                        .setAttribute("otpApiSuccess", String.valueOf(otpResponse.isSuccess()))
                         .createLoginUsernamePassword();
                 context.challenge(otpChallengeResponse);
-                return;
-
             } else {
                 if (otpNumber == null || otpNumber.isEmpty()) {
                     logger.warn("OTP number is missing");
+
+                    String prevExtCode = authSession.getAuthNote("EXT_API_RESPONSE_CODE");
+                    String prevExtMessage = authSession.getAuthNote("EXT_API_RESPONSE_MESSAGE");
+                    String prevExtSuccess = authSession.getAuthNote("EXT_API_SUCCESS");
+                    String prevOtpCode = authSession.getAuthNote("OTP_API_RESPONSE_CODE");
+                    String prevOtpMessage = authSession.getAuthNote("OTP_API_RESPONSE_MESSAGE");
+                    String prevOtpSuccess = authSession.getAuthNote("OTP_API_SUCCESS");
+
                     Response otpChallengeResponse = context.form()
                             .setError("Please enter the OTP code.")
                             .setAttribute("showOtpField", true)
                             .setAttribute("username", username)
+                            .setAttribute("extApiResponseCode", prevExtCode)
+                            .setAttribute("extApiResponseMessage", prevExtMessage)
+                            .setAttribute("extApiSuccess", prevExtSuccess)
+                            .setAttribute("otpApiResponseCode", prevOtpCode)
+                            .setAttribute("otpApiResponseMessage", prevOtpMessage)
+                            .setAttribute("otpApiSuccess", prevOtpSuccess)
                             .createLoginUsernamePassword();
                     context.challenge(otpChallengeResponse);
                     return;
@@ -183,6 +231,13 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                 OtpResponse otpVerifyResponse = otpClient.verifyOtp(userId, otpNumber, transactionId);
 
+                authSession.setAuthNote("OTP_API_RESPONSE_CODE", otpVerifyResponse.getCode() != null ? otpVerifyResponse.getCode() : "");
+                authSession.setAuthNote("OTP_API_RESPONSE_MESSAGE", otpVerifyResponse.getMessage() != null ? otpVerifyResponse.getMessage() : "");
+                authSession.setAuthNote("OTP_API_SUCCESS", String.valueOf(otpVerifyResponse.isSuccess()));
+
+                logger.infof("OTP Verify Response - Code: %s, Message: %s, Success: %s",
+                        otpVerifyResponse.getCode(), otpVerifyResponse.getMessage(), otpVerifyResponse.isSuccess());
+
                 if (!otpVerifyResponse.isSuccess()) {
                     logger.warnf("OTP verification failed. Code: %s, Message: %s",
                             otpVerifyResponse.getCode(), otpVerifyResponse.getMessage());
@@ -192,10 +247,20 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                         errorMessage = "Invalid OTP code";
                     }
 
+                    String prevExtCode = authSession.getAuthNote("EXT_API_RESPONSE_CODE");
+                    String prevExtMessage = authSession.getAuthNote("EXT_API_RESPONSE_MESSAGE");
+                    String prevExtSuccess = authSession.getAuthNote("EXT_API_SUCCESS");
+
                     Response otpChallengeResponse = context.form()
                             .setError(errorMessage)
                             .setAttribute("showOtpField", true)
                             .setAttribute("username", username)
+                            .setAttribute("extApiResponseCode", prevExtCode)
+                            .setAttribute("extApiResponseMessage", prevExtMessage)
+                            .setAttribute("extApiSuccess", prevExtSuccess)
+                            .setAttribute("otpApiResponseCode", otpVerifyResponse.getCode())
+                            .setAttribute("otpApiResponseMessage", otpVerifyResponse.getMessage())
+                            .setAttribute("otpApiSuccess", String.valueOf(otpVerifyResponse.isSuccess()))
                             .createLoginUsernamePassword();
                     context.challenge(otpChallengeResponse);
                     return;
@@ -244,6 +309,12 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 authSession.removeAuthNote("CUSTOMER_NUMBER");
                 authSession.removeAuthNote("AUTH_STATE");
                 authSession.removeAuthNote("USER_INFO_JSON");
+                authSession.removeAuthNote("EXT_API_RESPONSE_CODE");
+                authSession.removeAuthNote("EXT_API_RESPONSE_MESSAGE");
+                authSession.removeAuthNote("EXT_API_SUCCESS");
+                authSession.removeAuthNote("OTP_API_RESPONSE_CODE");
+                authSession.removeAuthNote("OTP_API_RESPONSE_MESSAGE");
+                authSession.removeAuthNote("OTP_API_SUCCESS");
 
                 context.setUser(user);
                 context.success();
@@ -253,15 +324,23 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         } catch (Exception e) {
             logger.error("Error during external authentication", e);
 
-            // Clean up session on error
             authSession.removeAuthNote("AUTH_STATE");
             authSession.removeAuthNote("TRANSACTION_ID");
             authSession.removeAuthNote("USER_ID");
             authSession.removeAuthNote("CUSTOMER_NUMBER");
             authSession.removeAuthNote("USER_INFO_JSON");
+            authSession.removeAuthNote("EXT_API_RESPONSE_CODE");
+            authSession.removeAuthNote("EXT_API_RESPONSE_MESSAGE");
+            authSession.removeAuthNote("EXT_API_SUCCESS");
+            authSession.removeAuthNote("OTP_API_RESPONSE_CODE");
+            authSession.removeAuthNote("OTP_API_RESPONSE_MESSAGE");
+            authSession.removeAuthNote("OTP_API_SUCCESS");
 
             Response challengeResponse = context.form()
                     .setError("An error occurred during authentication. Please try again later.")
+                    .setAttribute("extApiResponseCode", "SYSTEM_ERROR")
+                    .setAttribute("extApiResponseMessage", "System error occurred")
+                    .setAttribute("extApiSuccess", "false")
                     .createLoginUsernamePassword();
             context.challenge(challengeResponse);
         }
@@ -335,13 +414,11 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         String currentState = authSession.getAuthNote("AUTH_STATE");
 
         if ("OTP_SENT".equals(currentState)) {
-            // User is submitting OTP
             if (formOtp != null && !formOtp.isEmpty()) {
-                logger.infof("Found OTP in form: %s", formOtp.substring(0, 2) + "***");
+                logger.infof("Found OTP in form: %s", formOtp.substring(0, Math.min(2, formOtp.length())) + "***");
                 authSession.setAuthNote("EXTERNAL_OTP", formOtp);
             }
         } else {
-            // User is submitting username/password
             if (formUsername != null && !formUsername.isEmpty() && formPassword != null && !formPassword.isEmpty()) {
                 logger.infof("Found credentials in form - username: %s", formUsername);
                 authSession.setAuthNote("EXTERNAL_USERNAME", formUsername);
