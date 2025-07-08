@@ -8,7 +8,6 @@ public class ExternalVerificationConfig {
     private static final Logger logger = Logger.getLogger(ExternalVerificationConfig.class);
     private static final int DEFAULT_TIMEOUT = 10; // 10 seconds
 
-    // Original user verification config
     private final String apiUrl;
     private final String apiUsername;
     private final String apiPassword;
@@ -145,7 +144,6 @@ public class ExternalVerificationConfig {
         String esignerTypeIdStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_ESIGNER_TYPE_ID);
         String channelIdStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_CHANNEL_ID);
 
-        // Parse timeout with default value
         int timeout = DEFAULT_TIMEOUT;
         if (timeoutStr != null && !timeoutStr.isEmpty()) {
             try {

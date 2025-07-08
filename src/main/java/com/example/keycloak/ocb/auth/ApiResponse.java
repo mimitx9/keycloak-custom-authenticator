@@ -31,8 +31,6 @@ public class ApiResponse {
         return success;
     }
 
-
-    // Static factory methods
     public static ApiResponse success(Map<String, String> userInfo) {
         return new ApiResponse("00", "Success", userInfo, true);
     }

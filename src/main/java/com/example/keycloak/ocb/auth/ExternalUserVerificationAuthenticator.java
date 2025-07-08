@@ -17,7 +17,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        // Retrieve information from authentication session
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
         String username = authSession.getAuthNote("EXTERNAL_USERNAME");

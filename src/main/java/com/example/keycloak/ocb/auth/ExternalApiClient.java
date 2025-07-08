@@ -37,7 +37,6 @@ public class ExternalApiClient {
     }
 
     public ApiResponse verifyUser(String username, String password) {
-        // Cấu hình timeout
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectionRequestTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
                 .setConnectTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
@@ -51,14 +50,12 @@ public class ExternalApiClient {
             logger.infof("Calling external API at URL: %s with timeout: %d seconds", apiUrl, timeoutSeconds);
             HttpPost httpPost = new HttpPost(apiUrl);
 
-            // Set headers
             httpPost.setHeader("Authorization", authHeader);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("Accept", "application/json");
 
-            // Tạo request body theo format mới
             ObjectNode requestBody = mapper.createObjectNode();
-            requestBody.put("userName", username);  // Đổi từ "username" thành "userName"
+            requestBody.put("userName", username);
             requestBody.put("password", password);
 
             String jsonBody = mapper.writeValueAsString(requestBody);
@@ -87,14 +84,12 @@ public class ExternalApiClient {
                     try {
                         JsonNode jsonResponse = mapper.readTree(responseString);
 
-                        // Lấy code và message
                         String code = getTextSafely(jsonResponse, "code");
                         String message = getTextSafely(jsonResponse, "message");
 
                         logger.infof("API Response - Code: %s, Message: %s", code, message);
 
                         if ("00".equals(code)) {
-                            // Success case
                             if (!jsonResponse.has("data")) {
                                 logger.warn("Success response but no data field");
                                 return ApiResponse.error(code, "No user data in response");

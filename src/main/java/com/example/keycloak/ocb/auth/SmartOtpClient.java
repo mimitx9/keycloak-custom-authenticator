@@ -169,7 +169,6 @@ public class SmartOtpClient {
 
                 logger.infof("OTP API Response - Code: %s, Message: %s", code, message);
 
-                // Check for success - assume "00" or "0" indicates success
                 if ("00".equals(code) || "0".equals(code)) {
                     return OtpResponse.success(code, message);
                 } else {

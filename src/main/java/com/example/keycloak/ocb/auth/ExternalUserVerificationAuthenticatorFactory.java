@@ -12,13 +12,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ExternalUserVerificationAuthenticatorFactory implements AuthenticatorFactory {
-    // Original config constants
     public static final String CONFIG_API_URL = "apiUrl";
     public static final String CONFIG_API_USERNAME = "apiUsername";
     public static final String CONFIG_API_PASSWORD = "apiPassword";
     public static final String CONFIG_TIMEOUT = "timeout";
 
-    // OTP config constants
     public static final String CONFIG_OTP_URL = "otpUrl";
     public static final String CONFIG_OTP_API_KEY = "otpApiKey";
     public static final String CONFIG_TRANSACTION_DATA = "transactionData";
