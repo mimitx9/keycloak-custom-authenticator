@@ -67,6 +67,26 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                 logger.infof("User verification successful for %s, creating OTP transaction", username);
 
+                Map<String, String> userInfo = userVerifyResponse.getUserInfo();
+                if (userInfo == null || userInfo.isEmpty()) {
+                    logger.error("No user info returned from successful API call");
+                    Response challengeResponse = context.form()
+                            .setError("Unable to retrieve user information. Please contact administrator.")
+                            .createLoginUsernamePassword();
+                    context.challenge(challengeResponse);
+                    return;
+                }
+
+                String customerNumber = userInfo.get("customerNumber");
+                if (customerNumber == null || customerNumber.isEmpty()) {
+                    logger.error("No customerNumber found in user verification response");
+                    Response challengeResponse = context.form()
+                            .setError("Unable to retrieve customer information. Please contact administrator.")
+                            .createLoginUsernamePassword();
+                    context.challenge(challengeResponse);
+                    return;
+                }
+
                 SmartOtpClient otpClient = new SmartOtpClient(
                         config.getOtpUrl(),
                         config.getOtpApiKey(),
@@ -74,7 +94,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 );
 
                 String transactionId = UUID.randomUUID().toString();
-                String userId = "OCB_" + username;
+                String userId = "OCB_" + customerNumber;
+
+                logger.infof("Creating OTP transaction for userId: %s (customerNumber: %s)", userId, customerNumber);
 
                 OtpResponse otpResponse = otpClient.createTransaction(
                         userId,
@@ -93,9 +115,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                 authSession.setAuthNote("TRANSACTION_ID", transactionId);
                 authSession.setAuthNote("USER_ID", userId);
+                authSession.setAuthNote("CUSTOMER_NUMBER", customerNumber);
                 authSession.setAuthNote("AUTH_STATE", "OTP_SENT");
 
-                Map<String, String> userInfo = userVerifyResponse.getUserInfo();
                 if (userInfo != null) {
                     authSession.setAuthNote("USER_INFO_JSON",
                             new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(userInfo));
@@ -140,15 +162,18 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
                 String transactionId = authSession.getAuthNote("TRANSACTION_ID");
                 String userId = authSession.getAuthNote("USER_ID");
+                String customerNumber = authSession.getAuthNote("CUSTOMER_NUMBER");
 
-                if (transactionId == null || userId == null) {
-                    logger.error("Missing transaction ID or user ID in session");
+                if (transactionId == null || userId == null || customerNumber == null) {
+                    logger.error("Missing transaction ID, user ID, or customer number in session");
                     Response challengeResponse = context.form()
                             .setError("Session expired. Please try again.")
                             .createLoginUsernamePassword();
                     context.challenge(challengeResponse);
                     return;
                 }
+
+                logger.infof("Verifying OTP for userId: %s (customerNumber: %s)", userId, customerNumber);
 
                 SmartOtpClient otpClient = new SmartOtpClient(
                         config.getOtpUrl(),
@@ -176,7 +201,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     return;
                 }
 
-                // Step 4: OTP verified successfully, complete authentication
                 logger.infof("OTP verification successful for user %s", username);
 
                 String userInfoJson = authSession.getAuthNote("USER_INFO_JSON");
@@ -217,6 +241,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 authSession.removeAuthNote("EXTERNAL_OTP");
                 authSession.removeAuthNote("TRANSACTION_ID");
                 authSession.removeAuthNote("USER_ID");
+                authSession.removeAuthNote("CUSTOMER_NUMBER");
                 authSession.removeAuthNote("AUTH_STATE");
                 authSession.removeAuthNote("USER_INFO_JSON");
 
@@ -232,6 +257,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             authSession.removeAuthNote("AUTH_STATE");
             authSession.removeAuthNote("TRANSACTION_ID");
             authSession.removeAuthNote("USER_ID");
+            authSession.removeAuthNote("CUSTOMER_NUMBER");
             authSession.removeAuthNote("USER_INFO_JSON");
 
             Response challengeResponse = context.form()
@@ -309,11 +335,13 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         String currentState = authSession.getAuthNote("AUTH_STATE");
 
         if ("OTP_SENT".equals(currentState)) {
+            // User is submitting OTP
             if (formOtp != null && !formOtp.isEmpty()) {
                 logger.infof("Found OTP in form: %s", formOtp.substring(0, 2) + "***");
                 authSession.setAuthNote("EXTERNAL_OTP", formOtp);
             }
         } else {
+            // User is submitting username/password
             if (formUsername != null && !formUsername.isEmpty() && formPassword != null && !formPassword.isEmpty()) {
                 logger.infof("Found credentials in form - username: %s", formUsername);
                 authSession.setAuthNote("EXTERNAL_USERNAME", formUsername);
