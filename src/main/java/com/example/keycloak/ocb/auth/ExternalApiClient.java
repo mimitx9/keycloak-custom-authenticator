@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.http.HttpEntity;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
@@ -13,55 +14,59 @@ import org.apache.http.util.EntityUtils;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class ExternalApiClient {
     private static final Logger logger = Logger.getLogger(ExternalApiClient.class);
     private final String apiUrl;
     private final String authHeader;
+    private final int timeoutSeconds;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public ExternalApiClient(String apiUrl, String username, String password) {
+    public ExternalApiClient(String apiUrl, String username, String password, int timeoutSeconds) {
         this.apiUrl = apiUrl;
         this.authHeader = "Basic " + Base64.getEncoder().encodeToString(
                 (username + ":" + password).getBytes(StandardCharsets.UTF_8)
         );
+        this.timeoutSeconds = timeoutSeconds;
     }
 
-    public Map<String, String> verifyUser(String username, String password) {
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
-            logger.infof("Calling external API at URL: %s", apiUrl);
+    public ApiResponse verifyUser(String username, String password) {
+        // Cấu hình timeout
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectionRequestTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
+                .setConnectTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
+                .setSocketTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
+                .build();
+
+        try (CloseableHttpClient client = HttpClients.custom()
+                .setDefaultRequestConfig(requestConfig)
+                .build()) {
+
+            logger.infof("Calling external API at URL: %s with timeout: %d seconds", apiUrl, timeoutSeconds);
             HttpPost httpPost = new HttpPost(apiUrl);
 
             // Set headers
             httpPost.setHeader("Authorization", authHeader);
             httpPost.setHeader("Content-Type", "application/json");
-            logger.info("Headers set");
+            httpPost.setHeader("Accept", "application/json");
 
-            // Thay đổi cách tạo request body - sử dụng writeValueAsString thay vì toString()
+            // Tạo request body theo format mới
             ObjectNode requestBody = mapper.createObjectNode();
-            requestBody.put("username", username);
+            requestBody.put("userName", username);  // Đổi từ "username" thành "userName"
             requestBody.put("password", password);
 
-            // Chuyển đổi ObjectNode thành chuỗi JSON đúng định dạng
             String jsonBody = mapper.writeValueAsString(requestBody);
             logger.infof("Request body: %s", jsonBody);
 
-            // Tạo StringEntity từ chuỗi JSON
             StringEntity stringEntity = new StringEntity(jsonBody, StandardCharsets.UTF_8);
             stringEntity.setContentType("application/json");
             httpPost.setEntity(stringEntity);
-
-            // In ra thông tin request trước khi gửi
-            logger.infof("Request method: %s", httpPost.getMethod());
-            logger.infof("Request URI: %s", httpPost.getURI());
-            Arrays.stream(httpPost.getAllHeaders()).forEach(header ->
-                    logger.infof("Request header: %s: %s", header.getName(), header.getValue())
-            );
 
             // Execute request
             logger.info("Executing HTTP request");
@@ -72,62 +77,62 @@ public class ExternalApiClient {
                 HttpEntity entity = response.getEntity();
                 if (entity != null) {
                     String responseString = EntityUtils.toString(entity, StandardCharsets.UTF_8);
-                    logger.infof("API Response (length: %d): %s", responseString.length(), responseString);
+                    logger.infof("API Response: %s", responseString);
 
                     if (responseString.isEmpty()) {
                         logger.warn("Response string is empty");
-                        return null;
+                        return ApiResponse.error("EMPTY_RESPONSE", "Empty response from API");
                     }
 
                     try {
                         JsonNode jsonResponse = mapper.readTree(responseString);
 
-                        // Log toàn bộ cấu trúc JSON để debug
-                        logger.infof("JSON response structure: %s", jsonResponse.toString());
+                        // Lấy code và message
+                        String code = getTextSafely(jsonResponse, "code");
+                        String message = getTextSafely(jsonResponse, "message");
 
-                        if (!jsonResponse.has("code")) {
-                            logger.warn("JSON response does not contain 'code' field");
-                            return null;
-                        }
-
-                        String code = jsonResponse.get("code").asText();
-                        logger.infof("Response code: %s", code);
+                        logger.infof("API Response - Code: %s, Message: %s", code, message);
 
                         if ("00".equals(code)) {
+                            // Success case
                             if (!jsonResponse.has("data")) {
-                                logger.warn("JSON response does not contain 'data' field");
-                                return null;
+                                logger.warn("Success response but no data field");
+                                return ApiResponse.error(code, "No user data in response");
                             }
 
                             JsonNode data = jsonResponse.get("data");
                             Map<String, String> userInfo = new HashMap<>();
                             userInfo.put("customerNumber", getTextSafely(data, "customerNumber"));
-                            userInfo.put("username", getTextSafely(data, "username"));
+                            userInfo.put("username", getTextSafely(data, "userName"));  // Sử dụng userName
                             userInfo.put("fullName", getTextSafely(data, "fullName"));
                             userInfo.put("email", getTextSafely(data, "email"));
                             userInfo.put("mobile", getTextSafely(data, "mobile"));
+
                             logger.info("Successfully parsed user info from API response");
-                            return userInfo;
+                            return ApiResponse.success(userInfo);
                         } else {
-                            logger.warnf("API returned non-success code: %s", code);
-                            return null;
+                            // Error cases
+                            logger.warnf("API returned error code: %s, message: %s", code, message);
+                            return ApiResponse.error(code, message);
                         }
                     } catch (Exception e) {
                         logger.error("Error parsing JSON response", e);
-                        logger.infof("Raw response for troubleshooting: %s", responseString);
-                        return null;
+                        return ApiResponse.error("PARSE_ERROR", "Failed to parse API response");
                     }
                 } else {
                     logger.warn("API response entity is null");
-                    return null;
+                    return ApiResponse.error("NULL_RESPONSE", "Null response from API");
                 }
-            } catch (Exception e) {
-                logger.error("Error processing API response", e);
-                return null;
             }
+        } catch (SocketTimeoutException e) {
+            logger.error("Request timeout after " + timeoutSeconds + " seconds", e);
+            return ApiResponse.timeout();
+        } catch (IOException e) {
+            logger.error("IO error calling external API", e);
+            return ApiResponse.connectionError();
         } catch (Exception e) {
-            logger.error("Error calling external API", e);
-            return null;
+            logger.error("Unexpected error calling external API", e);
+            return ApiResponse.error("UNEXPECTED_ERROR", "Unexpected error occurred");
         }
     }
 

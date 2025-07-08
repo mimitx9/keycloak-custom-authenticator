@@ -12,16 +12,32 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ExternalUserVerificationAuthenticatorFactory implements AuthenticatorFactory {
+    // Original config constants
     public static final String CONFIG_API_URL = "apiUrl";
     public static final String CONFIG_API_USERNAME = "apiUsername";
     public static final String CONFIG_API_PASSWORD = "apiPassword";
-    public static final String CONFIG_TARGET_CLIENT_ID = "targetClientId";
+    public static final String CONFIG_TIMEOUT = "timeout";
+
+    // OTP config constants
+    public static final String CONFIG_OTP_URL = "otpUrl";
+    public static final String CONFIG_OTP_API_KEY = "otpApiKey";
+    public static final String CONFIG_TRANSACTION_DATA = "transactionData";
+    public static final String CONFIG_TRANSACTION_TYPE_ID = "transactionTypeId";
+    public static final String CONFIG_CHALLENGE = "challenge";
+    public static final String CONFIG_CALLBACK_URL = "callbackUrl";
+    public static final String CONFIG_ONLINE = "online";
+    public static final String CONFIG_PUSH = "push";
+    public static final String CONFIG_NOTIFICATION_TITLE = "notificationTitle";
+    public static final String CONFIG_NOTIFICATION_BODY = "notificationBody";
+    public static final String CONFIG_ESIGNER_TYPE_ID = "esignerTypeId";
+    public static final String CONFIG_CHANNEL_ID = "channelId";
+
     public static final String PROVIDER_ID = "external-user-verification";
     private static final ExternalUserVerificationAuthenticator SINGLETON = new ExternalUserVerificationAuthenticator();
 
     @Override
     public String getDisplayType() {
-        return "External User Verification";
+        return "External User Verification with OTP";
     }
 
     @Override
@@ -31,7 +47,7 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
 
     @Override
     public boolean isConfigurable() {
-        return true;  // Quan trọng: phải trả về true để SPI có thể cấu hình
+        return true;
     }
 
     @Override
@@ -50,45 +66,136 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
 
     @Override
     public String getHelpText() {
-        return "Xác thực người dùng qua API bên ngoài và đồng bộ thông tin người dùng về Keycloak.";
+        return "Xác thực người dùng qua API của OCB và Smart OTP";
     }
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
         List<ProviderConfigProperty> config = new ArrayList<>();
 
-        // Cấu hình API URL
         ProviderConfigProperty apiUrl = new ProviderConfigProperty();
         apiUrl.setName(CONFIG_API_URL);
-        apiUrl.setLabel("API URL");
+        apiUrl.setLabel("User Verification API URL");
         apiUrl.setType(ProviderConfigProperty.STRING_TYPE);
-        apiUrl.setHelpText("URL đầy đủ của API bên ngoài để xác thực người dùng (ví dụ: http://localhost:8080/cb/callbacks/customer/authentication/verify)");
+        apiUrl.setHelpText("URL của API xác thực user/password");
         config.add(apiUrl);
 
-        // Cấu hình API Username
         ProviderConfigProperty apiUsername = new ProviderConfigProperty();
         apiUsername.setName(CONFIG_API_USERNAME);
         apiUsername.setLabel("API Username");
         apiUsername.setType(ProviderConfigProperty.STRING_TYPE);
-        apiUsername.setHelpText("Username cho Basic Authentication với API bên ngoài");
+        apiUsername.setHelpText("Username cho Basic Authentication");
         config.add(apiUsername);
 
-        // Cấu hình API Password - sử dụng kiểu PASSWORD để che giấu
         ProviderConfigProperty apiPassword = new ProviderConfigProperty();
         apiPassword.setName(CONFIG_API_PASSWORD);
         apiPassword.setLabel("API Password");
         apiPassword.setType(ProviderConfigProperty.PASSWORD);
-        apiPassword.setHelpText("Password cho Basic Authentication với API bên ngoài");
+        apiPassword.setHelpText("Password cho Basic Authentication");
         config.add(apiPassword);
 
-        // Cấu hình Target Client ID
-        ProviderConfigProperty targetClientId = new ProviderConfigProperty();
-        targetClientId.setName(CONFIG_TARGET_CLIENT_ID);
-        targetClientId.setLabel("Target Client ID");
-        targetClientId.setType(ProviderConfigProperty.STRING_TYPE);
-        targetClientId.setHelpText("Client ID mà sẽ áp dụng xác thực bên ngoài");
-        targetClientId.setDefaultValue("ccp-client-id");  // Đã cập nhật theo log của bạn
-        config.add(targetClientId);
+        ProviderConfigProperty timeout = new ProviderConfigProperty();
+        timeout.setName(CONFIG_TIMEOUT);
+        timeout.setLabel("API Timeout (seconds)");
+        timeout.setType(ProviderConfigProperty.STRING_TYPE);
+        timeout.setHelpText("Timeout cho API call");
+        timeout.setDefaultValue("10");
+        config.add(timeout);
+
+        ProviderConfigProperty otpUrl = new ProviderConfigProperty();
+        otpUrl.setName(CONFIG_OTP_URL);
+        otpUrl.setLabel("Smart OTP API Base URL");
+        otpUrl.setType(ProviderConfigProperty.STRING_TYPE);
+        otpUrl.setHelpText("Base URL của Smart OTP API");
+        config.add(otpUrl);
+
+        ProviderConfigProperty otpApiKey = new ProviderConfigProperty();
+        otpApiKey.setName(CONFIG_OTP_API_KEY);
+        otpApiKey.setLabel("Smart OTP API Key");
+        otpApiKey.setType(ProviderConfigProperty.PASSWORD);
+        otpApiKey.setHelpText("API Key cho Smart OTP");
+        config.add(otpApiKey);
+
+        // ========== Transaction Config ==========
+        ProviderConfigProperty transactionData = new ProviderConfigProperty();
+        transactionData.setName(CONFIG_TRANSACTION_DATA);
+        transactionData.setLabel("Transaction Data");
+        transactionData.setType(ProviderConfigProperty.STRING_TYPE);
+        transactionData.setHelpText("Dữ liệu transaction");
+        transactionData.setDefaultValue("1|CCP|Login|0");
+        config.add(transactionData);
+
+        ProviderConfigProperty transactionTypeId = new ProviderConfigProperty();
+        transactionTypeId.setName(CONFIG_TRANSACTION_TYPE_ID);
+        transactionTypeId.setLabel("Transaction Type ID");
+        transactionTypeId.setType(ProviderConfigProperty.STRING_TYPE);
+        transactionTypeId.setHelpText("ID transaction");
+        transactionTypeId.setDefaultValue("1");
+        config.add(transactionTypeId);
+
+        ProviderConfigProperty challenge = new ProviderConfigProperty();
+        challenge.setName(CONFIG_CHALLENGE);
+        challenge.setLabel("Challenge");
+        challenge.setType(ProviderConfigProperty.STRING_TYPE);
+        challenge.setHelpText("Challenge string");
+        challenge.setDefaultValue("");
+        config.add(challenge);
+
+        ProviderConfigProperty callbackUrl = new ProviderConfigProperty();
+        callbackUrl.setName(CONFIG_CALLBACK_URL);
+        callbackUrl.setLabel("Callback URL");
+        callbackUrl.setType(ProviderConfigProperty.STRING_TYPE);
+        callbackUrl.setHelpText("URL callback");
+        callbackUrl.setDefaultValue("");
+        config.add(callbackUrl);
+
+        ProviderConfigProperty online = new ProviderConfigProperty();
+        online.setName(CONFIG_ONLINE);
+        online.setLabel("Online");
+        online.setType(ProviderConfigProperty.STRING_TYPE);
+        online.setHelpText("Online mode");
+        online.setDefaultValue("0");
+        config.add(online);
+
+        ProviderConfigProperty push = new ProviderConfigProperty();
+        push.setName(CONFIG_PUSH);
+        push.setLabel("Push");
+        push.setType(ProviderConfigProperty.STRING_TYPE);
+        push.setHelpText("Push notification");
+        push.setDefaultValue("1");
+        config.add(push);
+
+        ProviderConfigProperty notificationTitle = new ProviderConfigProperty();
+        notificationTitle.setName(CONFIG_NOTIFICATION_TITLE);
+        notificationTitle.setLabel("Notification Title");
+        notificationTitle.setType(ProviderConfigProperty.STRING_TYPE);
+        notificationTitle.setHelpText("Title");
+        notificationTitle.setDefaultValue("Transaction confirmation");
+        config.add(notificationTitle);
+
+        ProviderConfigProperty notificationBody = new ProviderConfigProperty();
+        notificationBody.setName(CONFIG_NOTIFICATION_BODY);
+        notificationBody.setLabel("Notification Body");
+        notificationBody.setType(ProviderConfigProperty.TEXT_TYPE);
+        notificationBody.setHelpText("Content");
+        notificationBody.setDefaultValue("You are making transaction on VPBank NEO. Please confirm the transaction.");
+        config.add(notificationBody);
+
+        ProviderConfigProperty esignerTypeId = new ProviderConfigProperty();
+        esignerTypeId.setName(CONFIG_ESIGNER_TYPE_ID);
+        esignerTypeId.setLabel("E-signer Type ID");
+        esignerTypeId.setType(ProviderConfigProperty.STRING_TYPE);
+        esignerTypeId.setHelpText("ID e-signer");
+        esignerTypeId.setDefaultValue("6");
+        config.add(esignerTypeId);
+
+        ProviderConfigProperty channelId = new ProviderConfigProperty();
+        channelId.setName(CONFIG_CHANNEL_ID);
+        channelId.setLabel("Channel ID");
+        channelId.setType(ProviderConfigProperty.STRING_TYPE);
+        channelId.setHelpText("ID channel");
+        channelId.setDefaultValue("1");
+        config.add(channelId);
 
         return config;
     }
@@ -100,17 +207,14 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
 
     @Override
     public void init(Config.Scope scope) {
-        // Không cần khởi tạo gì
     }
 
     @Override
     public void postInit(KeycloakSessionFactory keycloakSessionFactory) {
-        // Không cần khởi tạo sau
     }
 
     @Override
     public void close() {
-        // Không cần giải phóng tài nguyên
     }
 
     @Override
