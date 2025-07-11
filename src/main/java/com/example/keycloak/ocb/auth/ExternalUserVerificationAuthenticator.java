@@ -10,101 +10,97 @@ import org.keycloak.models.*;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class ExternalUserVerificationAuthenticator implements Authenticator {
     private static final Logger logger = Logger.getLogger(ExternalUserVerificationAuthenticator.class);
 
-    private static final String ACTION_VERIFY_CREDENTIALS = "verify_credentials";
+    // Action constants
     private static final String ACTION_VERIFY_OTP = "verify_otp";
     private static final String ACTION_BACK_TO_LOGIN = "back_to_login";
 
+    // Success codes
+    private static final Set<String> SUCCESS_CODES = Set.of("00", "0", "SUCCESS");
+
+    // Message types
+    public enum MessageType {
+        SUCCESS, ERROR, INFO
+    }
+
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        logger.info("=== Starting authentication process ===");
+        logger.info("=== Starting ExternalUserVerificationAuthenticator ===");
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         String currentState = authSession.getAuthNote("AUTH_STATE");
 
         logger.infof("Current authentication state: %s", currentState);
 
+        // Check if we have credentials from CustomUsernamePasswordForm
+        String username = authSession.getAuthNote("EXTERNAL_USERNAME");
+        String password = authSession.getAuthNote("EXTERNAL_PASSWORD");
+
+        logger.infof("Credentials from session - username: %s, password provided: %s",
+                username, password != null && !password.isEmpty());
+
         if (currentState == null || currentState.isEmpty()) {
-            logger.info("No current state found, showing initial login form");
-            showInitialLoginForm(context);
+            // First time: verify credentials if available
+            if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
+                logger.info("Found credentials in session, proceeding with verification");
+                handleCredentialsVerificationFromSession(context, username, password);
+            } else {
+                logger.warn("No credentials found in session, this should not happen");
+                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
+            }
             return;
         }
 
         switch (currentState) {
             case "CREDENTIALS_VERIFIED":
                 logger.info("Credentials already verified, showing OTP form");
-                showOtpForm(context, null);
+                showOtpForm(context, null, MessageType.INFO);
                 break;
             case "OTP_SENT":
                 logger.info("OTP already sent, showing OTP form");
-                showOtpForm(context, null);
+                showOtpForm(context, null, MessageType.INFO);
                 break;
             default:
-                logger.warnf("Unknown state: %s, resetting to initial form", currentState);
-                resetAuthenticationState(authSession);
-                showInitialLoginForm(context);
+                logger.warnf("Unknown state: %s, failing authentication", currentState);
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
         }
     }
 
     @Override
     public void action(AuthenticationFlowContext context) {
-        logger.info("=== Processing form action ===");
+        logger.info("=== Processing form action in ExternalUserVerificationAuthenticator ===");
 
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String action = formData.getFirst("action");
 
         logger.infof("Form action received: %s", action);
 
-        formData.forEach((key, values) -> {
-            if (!"password".equals(key) && !"otp".equals(key)) {
-                logger.infof("Form parameter - %s: %s", key, values);
-            } else {
-                logger.infof("Form parameter - %s: [REDACTED]", key);
-            }
-        });
-
-        if (ACTION_VERIFY_CREDENTIALS.equals(action)) {
-            handleCredentialsVerification(context, formData);
-        } else if (ACTION_VERIFY_OTP.equals(action)) {
+        if (ACTION_VERIFY_OTP.equals(action)) {
             handleOtpVerification(context, formData);
         } else if (ACTION_BACK_TO_LOGIN.equals(action)) {
             handleBackToLogin(context);
         } else {
             logger.warnf("Unknown action: %s", action);
-            showInitialLoginForm(context);
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
         }
     }
 
-    private void handleCredentialsVerification(AuthenticationFlowContext context, MultivaluedMap<String, String> formData) {
-        logger.info("=== Handling credentials verification ===");
-
-        String username = formData.getFirst("username");
-        String password = formData.getFirst("password");
+    private void handleCredentialsVerificationFromSession(AuthenticationFlowContext context, String username, String password) {
+        logger.info("=== Handling credentials verification from session ===");
 
         logger.infof("Verifying credentials for username: %s", username);
-
-        if (username == null || username.trim().isEmpty()) {
-            logger.warn("Username is empty");
-            showInitialLoginForm(context, "Username is required");
-            return;
-        }
-
-        if (password == null || password.trim().isEmpty()) {
-            logger.warn("Password is empty");
-            showInitialLoginForm(context, "Password is required");
-            return;
-        }
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         ExternalVerificationConfig config = ExternalVerificationConfig.getConfig(context);
 
         if (!config.isValid()) {
             logger.error("External verification config is invalid");
-            showInitialLoginForm(context, "Configuration error");
+            context.failure(AuthenticationFlowError.CLIENT_CREDENTIALS_SETUP_REQUIRED);
             return;
         }
 
@@ -133,12 +129,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 logger.warnf("User verification failed for %s. Code: %s, Message: %s",
                         username, userVerifyResponse.getCode(), userVerifyResponse.getMessage());
 
-                String errorMessage = userVerifyResponse.getMessage();
-                if (errorMessage == null || errorMessage.isEmpty()) {
-                    errorMessage = "Code: " + userVerifyResponse.getCode();
-                }
-
-                showInitialLoginForm(context, errorMessage);
+                // Clear session and force restart
+                resetAuthenticationState(authSession);
+                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
                 return;
             }
 
@@ -147,22 +140,23 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
             if (userInfo == null || userInfo.isEmpty()) {
                 logger.error("No user info returned from successful API call");
-                showInitialLoginForm(context, "No user data in successful response");
+                resetAuthenticationState(authSession);
+                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
                 return;
             }
 
             String customerNumber = userInfo.get("customerNumber");
             if (customerNumber == null || customerNumber.isEmpty()) {
                 logger.error("No customerNumber found in user verification response");
-                showInitialLoginForm(context, "No customerNumber in response");
+                resetAuthenticationState(authSession);
+                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
                 return;
             }
 
             logger.infof("User info extracted - CustomerNumber: %s, Email: %s, Mobile: %s",
                     customerNumber, userInfo.get("email"), userInfo.get("mobile"));
 
-            authSession.setAuthNote("EXTERNAL_USERNAME", username);
-            authSession.setAuthNote("EXTERNAL_PASSWORD", password);
+            // Update session with verified data
             authSession.setAuthNote("CUSTOMER_NUMBER", customerNumber);
 
             try {
@@ -178,7 +172,8 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
         } catch (Exception e) {
             logger.error("Unexpected error during credentials verification", e);
-            showInitialLoginForm(context, "Unexpected error: " + e.getMessage());
+            resetAuthenticationState(authSession);
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
         }
     }
 
@@ -190,7 +185,8 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
         if (!config.isOtpConfigValid()) {
             logger.error("OTP configuration is invalid");
-            showInitialLoginForm(context, "OTP configuration invalid");
+            resetAuthenticationState(authSession);
+            context.failure(AuthenticationFlowError.CLIENT_CREDENTIALS_SETUP_REQUIRED);
             return;
         }
 
@@ -237,15 +233,9 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 logger.warnf("OTP creation failed. Code: %s, Message: %s",
                         otpResponse.getCode(), otpResponse.getMessage());
 
-                // Use OTP API response message directly
-                String errorMessage = otpResponse.getMessage();
-                if (errorMessage == null || errorMessage.isEmpty()) {
-                    errorMessage = "OTP Error Code: " + otpResponse.getCode();
-                }
-
                 // Reset to initial state on OTP creation failure
                 resetAuthenticationState(authSession);
-                showInitialLoginForm(context, errorMessage);
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
                 return;
             }
 
@@ -258,12 +248,12 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 successMessage = "OTP sent successfully";
             }
 
-            showOtpForm(context, successMessage);
+            showOtpForm(context, successMessage, MessageType.SUCCESS);
 
         } catch (Exception e) {
             logger.error("Error creating OTP transaction", e);
             resetAuthenticationState(authSession);
-            showInitialLoginForm(context, "OTP creation error: " + e.getMessage());
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
         }
     }
 
@@ -274,7 +264,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
         if (otpNumber == null || otpNumber.trim().isEmpty()) {
             logger.warn("OTP code is empty");
-            showOtpForm(context, "OTP is required");
+            showOtpForm(context, "OTP is required", MessageType.ERROR);
             return;
         }
 
@@ -289,7 +279,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             logger.errorf("Missing transaction information in session - TransactionId: %s, UserId: %s, CustomerNumber: %s",
                     transactionId, userId, customerNumber);
             resetAuthenticationState(authSession);
-            showInitialLoginForm(context, "Session expired");
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
             return;
         }
 
@@ -327,7 +317,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     errorMessage = "OTP verify failed. Code: " + otpVerifyResponse.getCode();
                 }
 
-                showOtpForm(context, errorMessage);
+                showOtpForm(context, errorMessage, MessageType.ERROR);
                 return;
             }
 
@@ -349,7 +339,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             if (userInfo == null || userInfo.isEmpty()) {
                 logger.error("No user info found in session");
                 resetAuthenticationState(authSession);
-                showInitialLoginForm(context, "Session data lost");
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
                 return;
             }
 
@@ -362,7 +352,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 if (user == null) {
                     logger.error("Failed to create user in Keycloak");
                     resetAuthenticationState(authSession);
-                    showInitialLoginForm(context, "Failed to create user account");
+                    context.failure(AuthenticationFlowError.INTERNAL_ERROR);
                     return;
                 }
                 logger.infof("User created successfully in Keycloak: %s", user.getUsername());
@@ -371,6 +361,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 updateUserInKeycloak(user, userInfo);
                 logger.infof("User updated successfully in Keycloak: %s", user.getUsername());
             }
+
             cleanupAuthenticationSession(authSession);
             context.setUser(user);
             context.success();
@@ -379,7 +370,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
         } catch (Exception e) {
             logger.error("Error during OTP verification", e);
-            showOtpForm(context, "OTP verification error: " + e.getMessage());
+            showOtpForm(context, "OTP verification error: " + e.getMessage(), MessageType.ERROR);
         }
     }
 
@@ -389,34 +380,11 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         resetAuthenticationState(authSession);
 
-        showInitialLoginForm(context);
+        // Force restart of the flow
+        context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
     }
 
-    private void showInitialLoginForm(AuthenticationFlowContext context) {
-        showInitialLoginForm(context, null);
-    }
-
-    private void showInitialLoginForm(AuthenticationFlowContext context, String errorMessage) {
-        logger.info("Showing initial login form");
-
-        org.keycloak.forms.login.LoginFormsProvider form = context.form()
-                .setAttribute("showCredentialsForm", true)
-                .setAttribute("showOtpForm", false)
-                .setAttribute("submitAction", ACTION_VERIFY_CREDENTIALS)
-                .setAttribute("submitButtonText", "Xác thực thông tin");
-
-        if (errorMessage != null && !errorMessage.isEmpty()) {
-            logger.infof("Showing login form with error: %s", errorMessage);
-            form.setError(errorMessage);
-        }
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        addDebugAttributes(form, authSession);
-
-        Response challengeResponse = form.createLoginUsernamePassword();
-        context.challenge(challengeResponse);
-    }
-
-    private void showOtpForm(AuthenticationFlowContext context, String message) {
+    private void showOtpForm(AuthenticationFlowContext context, String message, MessageType messageType) {
         logger.info("Showing OTP form");
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
@@ -432,14 +400,19 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 .setAttribute("backButtonText", "Quay lại đăng nhập");
 
         if (message != null && !message.isEmpty()) {
-            if (message.contains("lỗi") || message.contains("không đúng") || message.contains("thất bại")) {
-                logger.infof("Showing OTP form with error: %s", message);
-                form.setError(message);
-            } else {
-                logger.infof("Showing OTP form with info: %s", message);
-                form.setInfo(message);
+            logger.infof("Showing OTP form with message (type: %s): %s", messageType, message);
+
+            switch (messageType) {
+                case ERROR:
+                    form.setError(message);
+                    break;
+                case SUCCESS:
+                case INFO:
+                    form.setInfo(message);
+                    break;
             }
         }
+
         addDebugAttributes(form, authSession);
 
         Response challengeResponse = form.createLoginUsernamePassword();
@@ -478,6 +451,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         authSession.removeAuthNote("OTP_VERIFY_RESPONSE_CODE");
         authSession.removeAuthNote("OTP_VERIFY_RESPONSE_MESSAGE");
         authSession.removeAuthNote("OTP_VERIFY_SUCCESS");
+        authSession.removeAuthNote("EXT_VERIFY_CHALLENGE_STATE");
     }
 
     private void cleanupAuthenticationSession(AuthenticationSessionModel authSession) {
@@ -541,7 +515,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 }
             }
 
-            // Update custom attributes
             user.setSingleAttribute("mobile", userInfo.get("mobile"));
             user.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
             user.setSingleAttribute("externalVerified", "true");
