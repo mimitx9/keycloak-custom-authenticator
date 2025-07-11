@@ -86,7 +86,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             handleBackToLogin(context);
         } else {
             logger.warnf("Unknown action: %s", action);
-            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+            showOtpForm(context, "Invalid action, please try again", MessageType.ERROR);
         }
     }
 
@@ -380,8 +380,32 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         resetAuthenticationState(authSession);
 
-        // Force restart of the flow
-        context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
+        // Simply show the initial login form with fresh state
+        logger.info("Showing initial login form after back action");
+
+        org.keycloak.forms.login.LoginFormsProvider form = context.form()
+                .setAttribute("showCredentialsForm", true)
+                .setAttribute("showOtpForm", false)
+                .setAttribute("submitAction", "verify_credentials") // This will be handled by CustomUsernamePasswordForm
+                .setAttribute("submitButtonText", "Xác thực thông tin");
+
+        Response challengeResponse = form.createLoginUsernamePassword();
+        context.challenge(challengeResponse);
+    }
+
+    private void showLoginFormWithRestart(AuthenticationFlowContext context) {
+        logger.info("Showing login form for restart");
+
+        // Clear all session state first
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        resetAuthenticationState(authSession);
+
+        // Force a fresh start by creating error page that redirects
+        Response response = context.form()
+                .setError("Session expired. Please login again.")
+                .createErrorPage(Response.Status.UNAUTHORIZED);
+
+        context.challenge(response);
     }
 
     private void showOtpForm(AuthenticationFlowContext context, String message, MessageType messageType) {
