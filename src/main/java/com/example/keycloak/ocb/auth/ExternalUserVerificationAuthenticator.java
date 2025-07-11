@@ -21,7 +21,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
     private static final String ACTION_BACK_TO_LOGIN = "back_to_login";
 
     // Success codes
-    private static final Set<String> SUCCESS_CODES = Set.of("00", "0", "SUCCESS");
+    private static final Set<String> SUCCESS_CODES = Set.of("00", "0", "0000", "SUCCESS");
 
     // Message types
     public enum MessageType {

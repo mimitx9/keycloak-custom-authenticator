@@ -15,10 +15,15 @@ import org.jboss.logging.Logger;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class SmartOtpClient {
     private static final Logger logger = Logger.getLogger(SmartOtpClient.class);
+
+    // Success codes for OTP API
+    private static final Set<String> SUCCESS_CODES = Set.of("00", "0", "0000", "SUCCESS");
+
     private final String baseUrl;
     private final String apiKey;
     private final int timeoutSeconds;
@@ -169,9 +174,12 @@ public class SmartOtpClient {
 
                 logger.infof("OTP API Response - Code: %s, Message: %s", code, message);
 
-                if ("00".equals(code) || "0".equals(code)) {
+                // Use the centralized success code check
+                if (isSuccessCode(code)) {
+                    logger.infof("OTP API call successful with code: %s", code);
                     return OtpResponse.success(code, message);
                 } else {
+                    logger.warnf("OTP API call failed with code: %s", code);
                     return OtpResponse.error(code, message);
                 }
 
@@ -183,6 +191,12 @@ public class SmartOtpClient {
             logger.warn("OTP API response entity is null");
             return OtpResponse.error("NULL_RESPONSE", "Null response from OTP API");
         }
+    }
+
+    private boolean isSuccessCode(String code) {
+        boolean isSuccess = SUCCESS_CODES.contains(code);
+        logger.infof("Checking success code: '%s' -> %s", code, isSuccess);
+        return isSuccess;
     }
 
     private String getTextSafely(com.fasterxml.jackson.databind.JsonNode node, String fieldName) {
