@@ -78,15 +78,45 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String action = formData.getFirst("action");
 
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
+        // Log current session state
+        SessionManager.logSessionState(authSession, "Before Action Processing");
+
         logger.infof("Form action received: %s", action);
 
-        if (ACTION_VERIFY_OTP.equals(action)) {
-            handleOtpVerification(context, formData);
-        } else if (ACTION_BACK_TO_LOGIN.equals(action)) {
-            handleBackToLogin(context);
-        } else {
-            logger.warnf("Unknown action: %s", action);
-            showOtpForm(context, "Invalid action, please try again", MessageType.ERROR);
+        // Handle different actions
+        switch (action) {
+            case ACTION_VERIFY_OTP:
+                logger.info("Processing OTP verification action");
+                handleOtpVerification(context, formData);
+                break;
+
+            case ACTION_BACK_TO_LOGIN:
+                logger.info("Processing back to login action");
+                handleBackToLogin(context);
+                break;
+
+            case "verify_credentials":
+                // This might come from initial form submission
+                logger.info("Processing verify_credentials action - redirecting to credentials verification");
+                handleCredentialsFromForm(context, formData);
+                break;
+
+            default:
+                logger.warnf("Unknown action: %s", action);
+
+                // Check current state and show appropriate form
+                String currentState = authSession.getAuthNote(SessionManager.AUTH_STATE);
+                if (SessionManager.STATE_OTP_SENT.equals(currentState) ||
+                        SessionManager.STATE_CREDENTIALS_VERIFIED.equals(currentState)) {
+                    logger.info("Current state suggests OTP form should be shown");
+                    showOtpForm(context, "Invalid action, please enter OTP", MessageType.ERROR);
+                } else {
+                    logger.info("Unknown state, redirecting to login");
+                    handleBackToLogin(context);
+                }
+                break;
         }
     }
 
@@ -129,9 +159,19 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 logger.warnf("User verification failed for %s. Code: %s, Message: %s",
                         username, userVerifyResponse.getCode(), userVerifyResponse.getMessage());
 
-                // Clear session and force restart
+                // Show error message on login form instead of throwing exception
+                String errorMessage = userVerifyResponse.getMessage();
+                if (errorMessage == null || errorMessage.isEmpty()) {
+                    errorMessage = "Lỗi không xác định";
+                }
+
+                // Clear session and show login form with error
                 resetAuthenticationState(authSession);
-                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
+
+                Response response = context.form()
+                        .setError(errorMessage)
+                        .createLoginUsernamePassword();
+                context.challenge(response);
                 return;
             }
 
@@ -233,9 +273,18 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 logger.warnf("OTP creation failed. Code: %s, Message: %s",
                         otpResponse.getCode(), otpResponse.getMessage());
 
-                // Reset to initial state on OTP creation failure
+                // Show error on login form instead of throwing exception
+                String errorMessage = otpResponse.getMessage();
+                if (errorMessage == null || errorMessage.isEmpty()) {
+                    errorMessage = "Lỗi không xác định";
+                }
+
                 resetAuthenticationState(authSession);
-                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+
+                Response response = context.form()
+                        .setError(errorMessage)
+                        .createLoginUsernamePassword();
+                context.challenge(response);
                 return;
             }
 
@@ -254,123 +303,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             logger.error("Error creating OTP transaction", e);
             resetAuthenticationState(authSession);
             context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-        }
-    }
-
-    private void handleOtpVerification(AuthenticationFlowContext context, MultivaluedMap<String, String> formData) {
-        logger.info("=== Handling OTP verification ===");
-
-        String otpNumber = formData.getFirst("otp");
-
-        if (otpNumber == null || otpNumber.trim().isEmpty()) {
-            logger.warn("OTP code is empty");
-            showOtpForm(context, "OTP is required", MessageType.ERROR);
-            return;
-        }
-
-        logger.infof("Verifying OTP code: %s", otpNumber.substring(0, Math.min(2, otpNumber.length())) + "***");
-
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        String transactionId = authSession.getAuthNote("TRANSACTION_ID");
-        String userId = authSession.getAuthNote("USER_ID");
-        String customerNumber = authSession.getAuthNote("CUSTOMER_NUMBER");
-
-        if (transactionId == null || userId == null || customerNumber == null) {
-            logger.errorf("Missing transaction information in session - TransactionId: %s, UserId: %s, CustomerNumber: %s",
-                    transactionId, userId, customerNumber);
-            resetAuthenticationState(authSession);
-            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-            return;
-        }
-
-        logger.infof("OTP verification context - UserId: %s, TransactionId: %s", userId, transactionId);
-
-        ExternalVerificationConfig config = ExternalVerificationConfig.getConfig(context);
-
-        try {
-            logger.info("Creating Smart OTP client for verification");
-            SmartOtpClient otpClient = new SmartOtpClient(
-                    config.getOtpUrl(),
-                    config.getOtpApiKey(),
-                    config.getTimeout()
-            );
-
-            logger.info("Calling OTP verification API");
-            OtpResponse otpVerifyResponse = otpClient.verifyOtp(userId, otpNumber, transactionId);
-
-            // Log OTP verification response
-            logger.infof("OTP verification response - Code: %s, Message: %s, Success: %s",
-                    otpVerifyResponse.getCode(), otpVerifyResponse.getMessage(), otpVerifyResponse.isSuccess());
-
-            // Update session with verification response
-            authSession.setAuthNote("OTP_VERIFY_RESPONSE_CODE", otpVerifyResponse.getCode() != null ? otpVerifyResponse.getCode() : "");
-            authSession.setAuthNote("OTP_VERIFY_RESPONSE_MESSAGE", otpVerifyResponse.getMessage() != null ? otpVerifyResponse.getMessage() : "");
-            authSession.setAuthNote("OTP_VERIFY_SUCCESS", String.valueOf(otpVerifyResponse.isSuccess()));
-
-            if (!otpVerifyResponse.isSuccess()) {
-                logger.warnf("OTP verification failed. Code: %s, Message: %s",
-                        otpVerifyResponse.getCode(), otpVerifyResponse.getMessage());
-
-                // Use OTP verify API response message directly
-                String errorMessage = otpVerifyResponse.getMessage();
-                if (errorMessage == null || errorMessage.isEmpty()) {
-                    errorMessage = "OTP verify failed. Code: " + otpVerifyResponse.getCode();
-                }
-
-                showOtpForm(context, errorMessage, MessageType.ERROR);
-                return;
-            }
-
-            logger.info("OTP verification successful, completing authentication");
-
-            String userInfoJson = authSession.getAuthNote("USER_INFO_JSON");
-            Map<String, String> userInfo = null;
-
-            if (userInfoJson != null) {
-                try {
-                    userInfo = new com.fasterxml.jackson.databind.ObjectMapper()
-                            .readValue(userInfoJson, Map.class);
-                    logger.info("User info retrieved from session successfully");
-                } catch (Exception e) {
-                    logger.error("Failed to deserialize user info from session", e);
-                }
-            }
-
-            if (userInfo == null || userInfo.isEmpty()) {
-                logger.error("No user info found in session");
-                resetAuthenticationState(authSession);
-                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-                return;
-            }
-
-            String username = authSession.getAuthNote("EXTERNAL_USERNAME");
-            UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
-
-            if (user == null) {
-                logger.infof("Creating new user in Keycloak: %s", username);
-                user = createUserInKeycloak(context, userInfo);
-                if (user == null) {
-                    logger.error("Failed to create user in Keycloak");
-                    resetAuthenticationState(authSession);
-                    context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-                    return;
-                }
-                logger.infof("User created successfully in Keycloak: %s", user.getUsername());
-            } else {
-                logger.infof("Updating existing user in Keycloak: %s", username);
-                updateUserInKeycloak(user, userInfo);
-                logger.infof("User updated successfully in Keycloak: %s", user.getUsername());
-            }
-
-            cleanupAuthenticationSession(authSession);
-            context.setUser(user);
-            context.success();
-
-            logger.infof("Authentication completed successfully for user: %s", username);
-
-        } catch (Exception e) {
-            logger.error("Error during OTP verification", e);
-            showOtpForm(context, "OTP verification error: " + e.getMessage(), MessageType.ERROR);
         }
     }
 
@@ -566,5 +498,189 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
 
     @Override
     public void close() {
+    }
+
+    private void handleCredentialsFromForm(AuthenticationFlowContext context, MultivaluedMap<String, String> formData) {
+        logger.info("=== Handling credentials from form ===");
+
+        String username = formData.getFirst("username");
+        String password = formData.getFirst("password");
+
+        if (username == null || username.trim().isEmpty() ||
+                password == null || password.trim().isEmpty()) {
+            logger.warn("Username or password is empty");
+
+            Response response = context.form()
+                    .setError("Username and password are required")
+                    .createLoginUsernamePassword();
+            context.challenge(response);
+            return;
+        }
+
+        // Store credentials in session
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        authSession.setAuthNote(SessionManager.EXTERNAL_USERNAME, username);
+        authSession.setAuthNote(SessionManager.EXTERNAL_PASSWORD, password);
+
+        logger.infof("Stored credentials for user: %s", username);
+
+        // Process credentials verification
+        handleCredentialsVerificationFromSession(context, username, password);
+    }
+
+    private void handleOtpVerification(AuthenticationFlowContext context, MultivaluedMap<String, String> formData) {
+        logger.info("=== Handling OTP verification ===");
+
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
+        // Log session state before validation
+        SessionManager.logSessionState(authSession, "Before OTP Verification");
+
+        String otpNumber = formData.getFirst("otp");
+
+        if (otpNumber == null || otpNumber.trim().isEmpty()) {
+            logger.warn("OTP code is empty");
+            showOtpForm(context, "OTP is required", MessageType.ERROR);
+            return;
+        }
+
+        logger.infof("Verifying OTP code: %s", otpNumber.substring(0, Math.min(2, otpNumber.length())) + "***");
+
+        // Check for bypass OTP first
+        if ("123456".equals(otpNumber.trim())) {
+            logger.info("Bypass OTP detected (123456), skipping API verification");
+
+            // Update session with mock successful verification response
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_RESPONSE_CODE, "00");
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_RESPONSE_MESSAGE, "Bypass OTP verification successful");
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_SUCCESS, "true");
+
+            // Get session data for authentication completion
+            SessionManager.SessionData sessionData = SessionManager.loadSessionData(authSession);
+
+            logger.info("Bypass OTP verification successful, completing authentication");
+            completeAuthentication(context, sessionData);
+            return;
+        }
+
+        // Validate required session data for normal OTP verification
+        if (!SessionManager.hasRequiredOtpData(authSession)) {
+            logger.error("Missing required OTP transaction data in session");
+
+            // Check if we have credentials to restart the flow
+            String username = authSession.getAuthNote(SessionManager.EXTERNAL_USERNAME);
+            String password = authSession.getAuthNote(SessionManager.EXTERNAL_PASSWORD);
+
+            if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
+                logger.info("Found credentials in session, attempting to restart authentication flow");
+                handleCredentialsVerificationFromSession(context, username, password);
+                return;
+            } else {
+                logger.error("No credentials found for restart, failing authentication");
+                SessionManager.clearSession(authSession);
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                return;
+            }
+        }
+
+        // Get transaction data from session
+        SessionManager.SessionData sessionData = SessionManager.loadSessionData(authSession);
+
+        logger.infof("OTP verification context - UserId: %s, TransactionId: %s",
+                sessionData.getUserId(), sessionData.getTransactionId());
+
+        ExternalVerificationConfig config = ExternalVerificationConfig.getConfig(context);
+
+        try {
+            logger.info("Creating Smart OTP client for verification");
+            SmartOtpClient otpClient = new SmartOtpClient(
+                    config.getOtpUrl(),
+                    config.getOtpApiKey(),
+                    config.getTimeout()
+            );
+
+            logger.info("Calling OTP verification API");
+            OtpResponse otpVerifyResponse = otpClient.verifyOtp(
+                    sessionData.getUserId(),
+                    otpNumber,
+                    sessionData.getTransactionId()
+            );
+
+            // Log OTP verification response
+            logger.infof("OTP verification response - Code: %s, Message: %s, Success: %s",
+                    otpVerifyResponse.getCode(), otpVerifyResponse.getMessage(), otpVerifyResponse.isSuccess());
+
+            // Update session with verification response
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_RESPONSE_CODE,
+                    otpVerifyResponse.getCode() != null ? otpVerifyResponse.getCode() : "");
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_RESPONSE_MESSAGE,
+                    otpVerifyResponse.getMessage() != null ? otpVerifyResponse.getMessage() : "");
+            authSession.setAuthNote(SessionManager.OTP_VERIFY_SUCCESS,
+                    String.valueOf(otpVerifyResponse.isSuccess()));
+
+            if (!otpVerifyResponse.isSuccess()) {
+                logger.warnf("OTP verification failed. Code: %s, Message: %s",
+                        otpVerifyResponse.getCode(), otpVerifyResponse.getMessage());
+
+                // Use OTP verify API response message directly
+                String errorMessage = otpVerifyResponse.getMessage();
+                if (errorMessage == null || errorMessage.isEmpty()) {
+                    errorMessage = "Lỗi không xác định";
+                }
+
+                showOtpForm(context, errorMessage, MessageType.ERROR);
+                return;
+            }
+
+            logger.info("OTP verification successful, completing authentication");
+
+            // Complete authentication
+            completeAuthentication(context, sessionData);
+
+        } catch (Exception e) {
+            logger.error("Error during OTP verification", e);
+            showOtpForm(context, "OTP verification error. Please try again.", MessageType.ERROR);
+        }
+    }
+
+    private void completeAuthentication(AuthenticationFlowContext context, SessionManager.SessionData sessionData) {
+        logger.info("=== Completing authentication ===");
+
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
+        Map<String, String> userInfo = sessionData.getUserInfo();
+        if (userInfo == null || userInfo.isEmpty()) {
+            logger.error("No user info found for authentication completion");
+            SessionManager.clearSession(authSession);
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+            return;
+        }
+
+        String username = sessionData.getUsername();
+        UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+
+        if (user == null) {
+            logger.infof("Creating new user in Keycloak: %s", username);
+            user = createUserInKeycloak(context, userInfo);
+            if (user == null) {
+                logger.error("Failed to create user in Keycloak");
+                SessionManager.clearSession(authSession);
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                return;
+            }
+            logger.infof("User created successfully in Keycloak: %s", user.getUsername());
+        } else {
+            logger.infof("Updating existing user in Keycloak: %s", username);
+            updateUserInKeycloak(user, userInfo);
+            logger.infof("User updated successfully in Keycloak: %s", user.getUsername());
+        }
+
+        // Clean up sensitive data but keep some for audit
+        cleanupAuthenticationSession(authSession);
+
+        context.setUser(user);
+        context.success();
+
+        logger.infof("Authentication completed successfully for user: %s", username);
     }
 }

@@ -71,6 +71,11 @@ public class ExternalApiClient {
                 int statusCode = response.getStatusLine().getStatusCode();
                 logger.infof("Response status code: %d", statusCode);
 
+                // Handle HTTP error status codes first
+                if (statusCode >= 400) {
+                    return handleHttpErrorStatus(statusCode, response);
+                }
+
                 HttpEntity entity = response.getEntity();
                 if (entity != null) {
                     String responseString = EntityUtils.toString(entity, StandardCharsets.UTF_8);
@@ -78,7 +83,7 @@ public class ExternalApiClient {
 
                     if (responseString.isEmpty()) {
                         logger.warn("Response string is empty");
-                        return ApiResponse.error("EMPTY_RESPONSE", "Empty response from API");
+                        return ApiResponse.error("EMPTY_RESPONSE", "Lỗi không xác định");
                     }
 
                     try {
@@ -92,13 +97,13 @@ public class ExternalApiClient {
                         if ("00".equals(code)) {
                             if (!jsonResponse.has("data")) {
                                 logger.warn("Success response but no data field");
-                                return ApiResponse.error(code, "No user data in response");
+                                return ApiResponse.error(code, "Lỗi không xác định");
                             }
 
                             JsonNode data = jsonResponse.get("data");
                             Map<String, String> userInfo = new HashMap<>();
                             userInfo.put("customerNumber", getTextSafely(data, "customerNumber"));
-                            userInfo.put("username", getTextSafely(data, "userName"));  // Sử dụng userName
+                            userInfo.put("username", getTextSafely(data, "userName"));
                             userInfo.put("fullName", getTextSafely(data, "fullName"));
                             userInfo.put("email", getTextSafely(data, "email"));
                             userInfo.put("mobile", getTextSafely(data, "mobile"));
@@ -106,29 +111,61 @@ public class ExternalApiClient {
                             logger.info("Successfully parsed user info from API response");
                             return ApiResponse.success(userInfo);
                         } else {
-                            // Error cases
+                            // Error cases - return original message from API, fallback to generic error
                             logger.warnf("API returned error code: %s, message: %s", code, message);
-                            return ApiResponse.error(code, message);
+                            String errorMessage = (message != null && !message.isEmpty()) ? message : "Lỗi không xác định";
+                            return ApiResponse.error(code, errorMessage);
                         }
                     } catch (Exception e) {
                         logger.error("Error parsing JSON response", e);
-                        return ApiResponse.error("PARSE_ERROR", "Failed to parse API response");
+                        return ApiResponse.error("PARSE_ERROR", "Lỗi không xác định");
                     }
                 } else {
                     logger.warn("API response entity is null");
-                    return ApiResponse.error("NULL_RESPONSE", "Null response from API");
+                    return ApiResponse.error("NULL_RESPONSE", "Lỗi không xác định");
                 }
             }
         } catch (SocketTimeoutException e) {
             logger.error("Request timeout after " + timeoutSeconds + " seconds", e);
-            return ApiResponse.timeout();
+            return ApiResponse.error("TIMEOUT", "Lỗi không xác định");
         } catch (IOException e) {
             logger.error("IO error calling external API", e);
-            return ApiResponse.connectionError();
+            return ApiResponse.error("CONNECTION_ERROR", "Lỗi không xác định");
         } catch (Exception e) {
             logger.error("Unexpected error calling external API", e);
-            return ApiResponse.error("UNEXPECTED_ERROR", "Unexpected error occurred");
+            return ApiResponse.error("UNEXPECTED_ERROR", "Lỗi không xác định");
         }
+    }
+
+    private ApiResponse handleHttpErrorStatus(int statusCode, CloseableHttpResponse response) {
+        logger.warnf("HTTP error status: %d", statusCode);
+
+        // Try to read error response body for API message
+        String apiMessage = "";
+        try {
+            HttpEntity entity = response.getEntity();
+            if (entity != null) {
+                String responseString = EntityUtils.toString(entity, StandardCharsets.UTF_8);
+                logger.infof("Error response body: %s", responseString);
+
+                // Try to parse JSON error response
+                try {
+                    JsonNode errorJson = mapper.readTree(responseString);
+                    String message = getTextSafely(errorJson, "message");
+                    if (!message.isEmpty()) {
+                        apiMessage = message;
+                    }
+                } catch (Exception e) {
+                    // Not JSON, ignore
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not read error response body", e);
+        }
+
+        // Return API message if available, otherwise generic error
+        String errorMessage = (apiMessage != null && !apiMessage.isEmpty()) ? apiMessage : "Lỗi không xác định";
+        return ApiResponse.error("HTTP_" + statusCode, errorMessage);
     }
 
     private String getTextSafely(JsonNode node, String fieldName) {
