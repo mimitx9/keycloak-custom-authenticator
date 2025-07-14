@@ -44,18 +44,28 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         logger.infof("Credentials from session - username: %s, password provided: %s",
                 username, password != null && !password.isEmpty());
 
+        // Handle case when no credentials and no state (fresh start or refresh)
+        if ((username == null || username.isEmpty()) &&
+                (currentState == null || currentState.isEmpty())) {
+            logger.info("No credentials and no state found - showing fresh login form");
+            showFreshLoginForm(context);
+            return;
+        }
+
+        // Handle case when we have credentials but no current state
         if (currentState == null || currentState.isEmpty()) {
             // First time: verify credentials if available
             if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
                 logger.info("Found credentials in session, proceeding with verification");
                 handleCredentialsVerificationFromSession(context, username, password);
             } else {
-                logger.warn("No credentials found in session, this should not happen");
-                context.failure(AuthenticationFlowError.INVALID_CREDENTIALS);
+                logger.warn("No credentials found in session - showing fresh login form");
+                showFreshLoginForm(context);
             }
             return;
         }
 
+        // Handle different states
         switch (currentState) {
             case "CREDENTIALS_VERIFIED":
                 logger.info("Credentials already verified, showing OTP form");
@@ -66,9 +76,27 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                 showOtpForm(context, null, MessageType.INFO);
                 break;
             default:
-                logger.warnf("Unknown state: %s, failing authentication", currentState);
-                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                logger.warnf("Unknown state: %s, showing fresh login form", currentState);
+                showFreshLoginForm(context);
         }
+    }
+
+    private void showFreshLoginForm(AuthenticationFlowContext context) {
+        logger.info("Showing fresh login form");
+
+        // Clear all session data to ensure clean state
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        resetAuthenticationState(authSession);
+
+        // Show clean login form
+        org.keycloak.forms.login.LoginFormsProvider form = context.form()
+                .setAttribute("showCredentialsForm", true)
+                .setAttribute("showOtpForm", false)
+                .setAttribute("submitAction", "verify_credentials")
+                .setAttribute("submitButtonText", "Xác thực thông tin");
+
+        Response challengeResponse = form.createLoginUsernamePassword();
+        context.challenge(challengeResponse);
     }
 
     @Override
@@ -84,6 +112,29 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         SessionManager.logSessionState(authSession, "Before Action Processing");
 
         logger.infof("Form action received: %s", action);
+
+        // Handle case when action is null (could happen on refresh)
+        if (action == null || action.isEmpty()) {
+            logger.warn("No action received, checking session state");
+
+            String currentState = authSession.getAuthNote(SessionManager.AUTH_STATE);
+            String username = authSession.getAuthNote(SessionManager.EXTERNAL_USERNAME);
+
+            if (currentState == null && (username == null || username.isEmpty())) {
+                logger.info("No state and no credentials - showing fresh login form");
+                showFreshLoginForm(context);
+                return;
+            } else if (SessionManager.STATE_OTP_SENT.equals(currentState) ||
+                    SessionManager.STATE_CREDENTIALS_VERIFIED.equals(currentState)) {
+                logger.info("Valid OTP state found - showing OTP form");
+                showOtpForm(context, null, MessageType.INFO);
+                return;
+            } else {
+                logger.info("Invalid or unknown state - showing fresh login form");
+                showFreshLoginForm(context);
+                return;
+            }
+        }
 
         // Handle different actions
         switch (action) {
@@ -113,8 +164,8 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     logger.info("Current state suggests OTP form should be shown");
                     showOtpForm(context, "Invalid action, please enter OTP", MessageType.ERROR);
                 } else {
-                    logger.info("Unknown state, redirecting to login");
-                    handleBackToLogin(context);
+                    logger.info("Unknown state or action, showing fresh login form");
+                    showFreshLoginForm(context);
                 }
                 break;
         }
@@ -312,32 +363,8 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         resetAuthenticationState(authSession);
 
-        // Simply show the initial login form with fresh state
-        logger.info("Showing initial login form after back action");
-
-        org.keycloak.forms.login.LoginFormsProvider form = context.form()
-                .setAttribute("showCredentialsForm", true)
-                .setAttribute("showOtpForm", false)
-                .setAttribute("submitAction", "verify_credentials") // This will be handled by CustomUsernamePasswordForm
-                .setAttribute("submitButtonText", "Xác thực thông tin");
-
-        Response challengeResponse = form.createLoginUsernamePassword();
-        context.challenge(challengeResponse);
-    }
-
-    private void showLoginFormWithRestart(AuthenticationFlowContext context) {
-        logger.info("Showing login form for restart");
-
-        // Clear all session state first
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        resetAuthenticationState(authSession);
-
-        // Force a fresh start by creating error page that redirects
-        Response response = context.form()
-                .setError("Session expired. Please login again.")
-                .createErrorPage(Response.Status.UNAUTHORIZED);
-
-        context.challenge(response);
+        // Show fresh login form
+        showFreshLoginForm(context);
     }
 
     private void showOtpForm(AuthenticationFlowContext context, String message, MessageType messageType) {
@@ -390,24 +417,21 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
     private void resetAuthenticationState(AuthenticationSessionModel authSession) {
         logger.info("Resetting authentication state");
 
-        authSession.removeAuthNote("AUTH_STATE");
-        authSession.removeAuthNote("EXTERNAL_USERNAME");
-        authSession.removeAuthNote("EXTERNAL_PASSWORD");
-        authSession.removeAuthNote("EXTERNAL_OTP");
-        authSession.removeAuthNote("TRANSACTION_ID");
-        authSession.removeAuthNote("USER_ID");
-        authSession.removeAuthNote("CUSTOMER_NUMBER");
-        authSession.removeAuthNote("USER_INFO_JSON");
-        authSession.removeAuthNote("EXT_API_RESPONSE_CODE");
-        authSession.removeAuthNote("EXT_API_RESPONSE_MESSAGE");
-        authSession.removeAuthNote("EXT_API_SUCCESS");
-        authSession.removeAuthNote("OTP_API_RESPONSE_CODE");
-        authSession.removeAuthNote("OTP_API_RESPONSE_MESSAGE");
-        authSession.removeAuthNote("OTP_API_SUCCESS");
-        authSession.removeAuthNote("OTP_VERIFY_RESPONSE_CODE");
-        authSession.removeAuthNote("OTP_VERIFY_RESPONSE_MESSAGE");
-        authSession.removeAuthNote("OTP_VERIFY_SUCCESS");
-        authSession.removeAuthNote("EXT_VERIFY_CHALLENGE_STATE");
+        // Clear all authentication-related session data
+        String[] keysToRemove = {
+                "AUTH_STATE", "EXTERNAL_USERNAME", "EXTERNAL_PASSWORD", "EXTERNAL_OTP",
+                "TRANSACTION_ID", "USER_ID", "CUSTOMER_NUMBER", "USER_INFO_JSON",
+                "EXT_API_RESPONSE_CODE", "EXT_API_RESPONSE_MESSAGE", "EXT_API_SUCCESS",
+                "OTP_API_RESPONSE_CODE", "OTP_API_RESPONSE_MESSAGE", "OTP_API_SUCCESS",
+                "OTP_VERIFY_RESPONSE_CODE", "OTP_VERIFY_RESPONSE_MESSAGE", "OTP_VERIFY_SUCCESS",
+                "EXT_VERIFY_CHALLENGE_STATE"
+        };
+
+        for (String key : keysToRemove) {
+            authSession.removeAuthNote(key);
+        }
+
+        logger.info("Authentication state reset completed");
     }
 
     private void cleanupAuthenticationSession(AuthenticationSessionModel authSession) {
