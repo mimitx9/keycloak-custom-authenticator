@@ -61,41 +61,6 @@ public class SessionManager {
         public void setUserInfo(Map<String, String> userInfo) { this.userInfo = userInfo; }
     }
 
-    public static void saveSessionData(AuthenticationSessionModel session, SessionData data) {
-        try {
-            logger.info("Saving session data");
-
-            if (data.getAuthState() != null) {
-                session.setAuthNote(AUTH_STATE, data.getAuthState());
-            }
-            if (data.getUsername() != null) {
-                session.setAuthNote(EXTERNAL_USERNAME, data.getUsername());
-            }
-            if (data.getTransactionId() != null) {
-                session.setAuthNote(TRANSACTION_ID, data.getTransactionId());
-                logger.infof("Saved TransactionId: %s", data.getTransactionId());
-            }
-            if (data.getUserId() != null) {
-                session.setAuthNote(USER_ID, data.getUserId());
-                logger.infof("Saved UserId: %s", data.getUserId());
-            }
-            if (data.getCustomerNumber() != null) {
-                session.setAuthNote(CUSTOMER_NUMBER, data.getCustomerNumber());
-                logger.infof("Saved CustomerNumber: %s", data.getCustomerNumber());
-            }
-            if (data.getUserInfo() != null) {
-                String userInfoJson = mapper.writeValueAsString(data.getUserInfo());
-                session.setAuthNote(USER_INFO_JSON, userInfoJson);
-                logger.info("Saved user info to session");
-            }
-
-            logger.info("Session data saved successfully");
-
-        } catch (Exception e) {
-            logger.error("Error saving session data", e);
-        }
-    }
-
     public static SessionData loadSessionData(AuthenticationSessionModel session) {
         try {
             logger.info("Loading session data");

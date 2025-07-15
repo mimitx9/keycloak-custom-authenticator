@@ -65,13 +65,11 @@ public class ExternalApiClient {
             stringEntity.setContentType("application/json");
             httpPost.setEntity(stringEntity);
 
-            // Execute request
             logger.info("Executing HTTP request");
             try (CloseableHttpResponse response = client.execute(httpPost)) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 logger.infof("Response status code: %d", statusCode);
 
-                // Handle HTTP error status codes first
                 if (statusCode >= 400) {
                     return handleHttpErrorStatus(statusCode, response);
                 }
@@ -111,7 +109,6 @@ public class ExternalApiClient {
                             logger.info("Successfully parsed user info from API response");
                             return ApiResponse.success(userInfo);
                         } else {
-                            // Error cases - return original message from API, fallback to generic error
                             logger.warnf("API returned error code: %s, message: %s", code, message);
                             String errorMessage = (message != null && !message.isEmpty()) ? message : "Lỗi không xác định";
                             return ApiResponse.error(code, errorMessage);
@@ -140,7 +137,6 @@ public class ExternalApiClient {
     private ApiResponse handleHttpErrorStatus(int statusCode, CloseableHttpResponse response) {
         logger.warnf("HTTP error status: %d", statusCode);
 
-        // Try to read error response body for API message
         String apiMessage = "";
         try {
             HttpEntity entity = response.getEntity();
@@ -148,7 +144,6 @@ public class ExternalApiClient {
                 String responseString = EntityUtils.toString(entity, StandardCharsets.UTF_8);
                 logger.infof("Error response body: %s", responseString);
 
-                // Try to parse JSON error response
                 try {
                     JsonNode errorJson = mapper.readTree(responseString);
                     String message = getTextSafely(errorJson, "message");
@@ -156,14 +151,12 @@ public class ExternalApiClient {
                         apiMessage = message;
                     }
                 } catch (Exception e) {
-                    // Not JSON, ignore
                 }
             }
         } catch (Exception e) {
             logger.warn("Could not read error response body", e);
         }
 
-        // Return API message if available, otherwise generic error
         String errorMessage = (apiMessage != null && !apiMessage.isEmpty()) ? apiMessage : "Lỗi không xác định";
         return ApiResponse.error("HTTP_" + statusCode, errorMessage);
     }

@@ -29,7 +29,7 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
     public static final String CONFIG_NOTIFICATION_BODY = "notificationBody";
     public static final String CONFIG_ESIGNER_TYPE_ID = "esignerTypeId";
     public static final String CONFIG_CHANNEL_ID = "channelId";
-
+    public static final String CONFIG_MAX_OTP_PER_DAY = "maxOtpPerDay";
     public static final String PROVIDER_ID = "external-user-verification";
     private static final ExternalUserVerificationAuthenticator SINGLETON = new ExternalUserVerificationAuthenticator();
 

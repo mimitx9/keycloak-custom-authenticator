@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit;
 public class SmartOtpClient {
     private static final Logger logger = Logger.getLogger(SmartOtpClient.class);
 
-    // Success codes for OTP API
     private static final Set<String> SUCCESS_CODES = Set.of("00", "0", "0000", "SUCCESS");
 
     private final String baseUrl;
@@ -38,7 +37,7 @@ public class SmartOtpClient {
     public OtpResponse createTransaction(String userId, String transactionId, String transactionData,
                                          int transactionTypeId, String challenge, String callbackUrl,
                                          int online, int push, String notificationTitle,
-                                         String notificationBody, int esignerTypeId, int channelId) {
+                                         String notificationBody, int esignerTypeId, int channelId, int maxOtpPerDay) {
 
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectionRequestTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
@@ -55,12 +54,10 @@ public class SmartOtpClient {
             logger.infof("Creating OTP transaction at URL: %s for user: %s", url, userId);
             HttpPost httpPost = new HttpPost(url);
 
-            // Set headers
             httpPost.setHeader("apikey", apiKey);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("x-request-id", java.util.UUID.randomUUID().toString());
 
-            // Create request body
             ObjectNode requestBody = mapper.createObjectNode();
             requestBody.put("userId", userId);
             requestBody.put("transactionData", transactionData);
@@ -118,12 +115,10 @@ public class SmartOtpClient {
             logger.infof("Verifying OTP at URL: %s for user: %s", url, userId);
             HttpPost httpPost = new HttpPost(url);
 
-            // Set headers
             httpPost.setHeader("apikey", apiKey);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("x-request-id", java.util.UUID.randomUUID().toString());
 
-            // Create request body
             ObjectNode requestBody = mapper.createObjectNode();
             requestBody.put("userId", userId);
             requestBody.put("otpNumber", otpNumber);
