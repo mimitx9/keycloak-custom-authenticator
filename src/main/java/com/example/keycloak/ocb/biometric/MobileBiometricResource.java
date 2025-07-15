@@ -1,6 +1,5 @@
 package com.example.keycloak.ocb.biometric;
 
-import com.example.keycloak.model.*;
 import com.example.keycloak.ocb.biometric.model.*;
 import com.example.keycloak.ocb.biometric.service.ChallengeCacheService;
 import com.example.keycloak.ocb.biometric.service.ChallengeService;
