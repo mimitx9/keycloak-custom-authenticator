@@ -195,6 +195,14 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
         channelId.setDefaultValue("1");
         config.add(channelId);
 
+        ProviderConfigProperty maxOtpPerDay = new ProviderConfigProperty();
+        maxOtpPerDay.setName(CONFIG_MAX_OTP_PER_DAY);
+        maxOtpPerDay.setLabel("Max OTP Per Day");
+        maxOtpPerDay.setType(ProviderConfigProperty.STRING_TYPE);
+        maxOtpPerDay.setHelpText("Số lượng OTP tối đa cho mỗi ngày");
+        maxOtpPerDay.setDefaultValue("100");
+        config.add(maxOtpPerDay);
+
         return config;
     }
 
