@@ -1,4 +1,4 @@
-package com.example.keycloak.model;
+package com.example.keycloak.ocb.biometric.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

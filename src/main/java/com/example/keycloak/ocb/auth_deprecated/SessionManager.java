@@ -1,10 +1,9 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.auth_deprecated;
 
 import org.jboss.logging.Logger;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.util.HashMap;
 import java.util.Map;
 
 public class SessionManager {

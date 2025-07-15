@@ -1,8 +1,8 @@
 package com.example.keycloak.corp;
 
 import com.example.keycloak.constant.ResponseCodes;
-import com.example.keycloak.util.ResponseMessageHandler;
-import com.example.keycloak.util.RetryLogicHandler;
+import com.example.keycloak.corp.util.ResponseMessageHandler;
+import com.example.keycloak.corp.util.RetryLogicHandler;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.events.Errors;
@@ -16,7 +16,6 @@ import org.jboss.logging.Logger;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 
-import java.util.HashMap;
 import java.util.Map;
 
 public class CustomLoginFormAuthenticator implements Authenticator {

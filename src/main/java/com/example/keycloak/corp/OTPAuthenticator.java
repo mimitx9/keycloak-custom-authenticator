@@ -1,9 +1,9 @@
 package com.example.keycloak.corp;
 
 import com.example.keycloak.constant.ResponseCodes;
-import com.example.keycloak.util.OTPRequestManager;
-import com.example.keycloak.util.ResponseMessageHandler;
-import com.example.keycloak.util.RetryLogicHandler;
+import com.example.keycloak.corp.util.OTPRequestManager;
+import com.example.keycloak.corp.util.ResponseMessageHandler;
+import com.example.keycloak.corp.util.RetryLogicHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.logging.Logger;

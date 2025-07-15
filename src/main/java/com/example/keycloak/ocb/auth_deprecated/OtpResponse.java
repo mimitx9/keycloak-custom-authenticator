@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.auth_deprecated;
 
 public class OtpResponse {
     private final String code;

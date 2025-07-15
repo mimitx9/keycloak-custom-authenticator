@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.smartOtp.util;
 
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;

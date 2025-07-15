@@ -1,7 +1,7 @@
 package com.example.keycloak.ocb.biometric.service;
 
-import com.example.keycloak.model.AllowedCredential;
-import com.example.keycloak.model.CredentialData;
+import com.example.keycloak.ocb.biometric.model.AllowedCredential;
+import com.example.keycloak.ocb.biometric.model.CredentialData;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.WebAuthnCredentialModel;

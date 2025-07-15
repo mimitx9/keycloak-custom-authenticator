@@ -2,8 +2,8 @@ package com.example.keycloak.ocb.biometric.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.example.keycloak.model.AuthenticationRequest;
-import com.example.keycloak.model.CredentialData;
+import com.example.keycloak.ocb.biometric.model.AuthenticationRequest;
+import com.example.keycloak.ocb.biometric.model.CredentialData;
 import org.keycloak.services.ServicesLogger;
 
 import java.security.*;

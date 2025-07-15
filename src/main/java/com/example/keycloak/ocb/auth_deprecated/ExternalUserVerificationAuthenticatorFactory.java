@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.auth_deprecated;
 
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;

@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.authenticate.model;
 
 import java.util.Map;
 

@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.auth_deprecated;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

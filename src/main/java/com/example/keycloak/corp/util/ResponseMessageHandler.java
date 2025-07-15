@@ -1,4 +1,4 @@
-package com.example.keycloak.util;
+package com.example.keycloak.corp.util;
 
 import java.util.HashMap;
 import java.util.Map;

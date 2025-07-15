@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth;
+package com.example.keycloak.ocb.auth_deprecated;
 
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
@@ -10,7 +10,6 @@ import org.keycloak.models.*;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 public class ExternalUserVerificationAuthenticator implements Authenticator {
