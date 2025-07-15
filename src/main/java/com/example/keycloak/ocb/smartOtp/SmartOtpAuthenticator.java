@@ -54,8 +54,17 @@ public class SmartOtpAuthenticator implements Authenticator {
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
+        UserModel user = context.getUser();
+        if (user == null) {
+            logger.error("No user found in context. Previous step should have set the user.");
+            context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+            return;
+        }
+
+        logger.infof("User context found: %s", user.getUsername());
+
         if (!isExternalVerificationCompleted(authSession)) {
-            logger.error("Ocb verification not completed. Cannot proceed with OTP.");
+            logger.error("External verification not completed. Cannot proceed with OTP.");
             context.failure(AuthenticationFlowError.INTERNAL_ERROR);
             return;
         }
@@ -308,42 +317,27 @@ public class SmartOtpAuthenticator implements Authenticator {
         context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
     }
 
+
     private void completeAuthentication(AuthenticationFlowContext context) {
         logger.info("=== Completing authentication ===");
-
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-
         try {
-            String userInfoJson = authSession.getAuthNote(USER_INFO_JSON);
-            if (userInfoJson == null || userInfoJson.isEmpty()) {
-                logger.error("No user info found for authentication completion");
+            UserModel user = context.getUser();
+
+            if (user == null) {
+                logger.error("No user found in context - this should not happen");
                 context.failure(AuthenticationFlowError.INTERNAL_ERROR);
                 return;
             }
 
-            Map<String, String> userInfo = deserializeUserInfo(userInfoJson);
-            String username = authSession.getAuthNote(VERIFIED_USERNAME);
-
-            UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
-
-            if (user == null) {
-                logger.infof("Creating new user in Keycloak: %s", username);
-                user = createUserInKeycloak(context, userInfo);
-                if (user == null) {
-                    logger.error("Failed to create user in Keycloak");
-                    context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-                    return;
-                }
-            } else {
-                logger.infof("Updating existing user in Keycloak: %s", username);
-                updateUserInKeycloak(user, userInfo);
-            }
+            logger.infof("User already exists in context: %s", user.getUsername());
+            user.setSingleAttribute("lastOtpVerification", String.valueOf(System.currentTimeMillis()));
+            user.setSingleAttribute("otpVerified", "true");
 
             cleanupSession(authSession);
-            context.setUser(user);
             context.success();
 
-            logger.infof("Authentication completed successfully for user: %s", username);
+            logger.infof("Authentication completed successfully for user: %s", user.getUsername());
 
         } catch (Exception e) {
             logger.error("Error completing authentication", e);
@@ -425,66 +419,6 @@ public class SmartOtpAuthenticator implements Authenticator {
     private String getSessionAttributeSafely(AuthenticationSessionModel session, String key) {
         String value = session.getAuthNote(key);
         return value != null ? value : "";
-    }
-
-    private Map<String, String> deserializeUserInfo(String userInfoJson) {
-        try {
-            ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            return mapper.readValue(userInfoJson, Map.class);
-        } catch (Exception e) {
-            logger.error("Error deserializing user info", e);
-            return new java.util.HashMap<>();
-        }
-    }
-
-    private UserModel createUserInKeycloak(AuthenticationFlowContext context, Map<String, String> userInfo) {
-        try {
-            logger.info("Creating new user in Keycloak with user info");
-
-            RealmModel realm = context.getRealm();
-            UserModel newUser = context.getSession().users().addUser(realm, userInfo.get("username"));
-
-            setUserAttributes(newUser, userInfo);
-
-            logger.infof("User created in Keycloak successfully: %s (Customer: %s)",
-                    newUser.getUsername(), userInfo.get("customerNumber"));
-
-            return newUser;
-        } catch (Exception e) {
-            logger.error("Error creating user in Keycloak", e);
-            return null;
-        }
-    }
-
-    private void updateUserInKeycloak(UserModel user, Map<String, String> userInfo) {
-        try {
-            logger.info("Updating existing user in Keycloak");
-            setUserAttributes(user, userInfo);
-            logger.infof("User updated in Keycloak successfully: %s", user.getUsername());
-        } catch (Exception e) {
-            logger.error("Error updating user in Keycloak", e);
-        }
-    }
-
-    private void setUserAttributes(UserModel user, Map<String, String> userInfo) {
-        user.setEnabled(true);
-        user.setEmail(userInfo.get("email"));
-
-        String fullName = userInfo.get("fullName");
-        if (fullName != null && !fullName.isEmpty()) {
-            String[] names = fullName.split(" ", 2);
-            if (names.length > 0) {
-                user.setFirstName(names[0]);
-                if (names.length > 1) {
-                    user.setLastName(names[1]);
-                }
-            }
-        }
-
-        user.setSingleAttribute("mobile", userInfo.get("mobile"));
-        user.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
-        user.setSingleAttribute("externalVerified", "true");
-        user.setSingleAttribute("lastExternalVerification", String.valueOf(System.currentTimeMillis()));
     }
 
     private void cleanupSession(AuthenticationSessionModel authSession) {

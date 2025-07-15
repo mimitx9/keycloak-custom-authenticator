@@ -14,7 +14,9 @@ import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.*;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class OcbUserVerificationAuthenticator implements Authenticator {
     private static final Logger logger = Logger.getLogger(OcbUserVerificationAuthenticator.class);
@@ -91,6 +93,42 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         return "true".equals(session.getAuthNote(EXTERNAL_VERIFICATION_COMPLETED));
     }
 
+
+    private boolean isNextStepEnabled(AuthenticationFlowContext context) {
+        return context.getExecution().getFlowId() != null &&
+                hasEnabledNextStep(context);
+    }
+
+    private boolean hasEnabledNextStep(AuthenticationFlowContext context) {
+        try {
+            List<AuthenticationExecutionModel> executions = context.getRealm()
+                    .getAuthenticationExecutionsStream(context.getExecution().getFlowId())
+                    .collect(Collectors.toList());
+
+            int currentIndex = -1;
+            for (int i = 0; i < executions.size(); i++) {
+                if (executions.get(i).getId().equals(context.getExecution().getId())) {
+                    currentIndex = i;
+                    break;
+                }
+            }
+
+            if (currentIndex >= 0 && currentIndex < executions.size() - 1) {
+                for (int i = currentIndex + 1; i < executions.size(); i++) {
+                    AuthenticationExecutionModel nextExec = executions.get(i);
+                    if (nextExec.getRequirement() != AuthenticationExecutionModel.Requirement.DISABLED) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        } catch (Exception e) {
+            logger.error("Error checking next step", e);
+            return true;
+        }
+    }
+
     private void handleCredentialsVerification(AuthenticationFlowContext context, String username, String password) {
         logger.info("=== Handling credentials verification ===");
         logger.infof("Verifying credentials for username: %s", username);
@@ -121,7 +159,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                     userVerifyResponse.getMessage(),
                     userVerifyResponse.isSuccess());
 
-            // Store API response for debugging/logging
             authSession.setAuthNote(EXT_API_RESPONSE_CODE,
                     userVerifyResponse.getCode() != null ? userVerifyResponse.getCode() : "");
             authSession.setAuthNote(EXT_API_RESPONSE_MESSAGE,
@@ -152,8 +189,26 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
             logger.infof("User info extracted - CustomerNumber: %s, Email: %s, Mobile: %s",
                     customerNumber, userInfo.get("email"), userInfo.get("mobile"));
 
-            storeDataForNextStep(authSession, username, customerNumber, userInfo);
+            logger.info("Creating/updating user in Keycloak after successful verification");
+            UserModel user = createOrUpdateUser(context, username, userInfo);
+            if (user == null) {
+                logger.error("Failed to create/update user in Keycloak");
+                showLoginForm(context, "Lỗi tạo thông tin người dùng", MessageType.ERROR);
+                return;
+            }
 
+            context.setUser(user);
+            logger.infof("User context set for: %s", username);
+
+            if (!isNextStepEnabled(context)) {
+                logger.info("No next step enabled, completing authentication directly");
+                cleanupSessionDirect(authSession);
+                context.success();
+                logger.infof("Authentication completed directly for user: %s", username);
+                return;
+            }
+
+            storeDataForNextStep(authSession, username, customerNumber, userInfo);
             authSession.removeAuthNote(EXTERNAL_PASSWORD);
 
             logger.info("External verification completed successfully, proceeding to next step");
@@ -163,6 +218,97 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
             logger.error("Unexpected error during credentials verification", e);
             showLoginForm(context, "Lỗi hệ thống. Vui lòng thử lại.", MessageType.ERROR);
         }
+    }
+
+    private UserModel createOrUpdateUser(AuthenticationFlowContext context, String username, Map<String, String> userInfo) {
+        logger.info("=== Creating/updating user in Keycloak ===");
+
+        try {
+            UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+
+            if (user == null) {
+                logger.infof("Creating new user in Keycloak: %s", username);
+                user = createUserInKeycloak(context, userInfo);
+                if (user == null) {
+                    logger.error("Failed to create user in Keycloak");
+                    return null;
+                }
+            } else {
+                logger.infof("Updating existing user in Keycloak: %s", username);
+                updateUserInKeycloak(user, userInfo);
+            }
+
+            logger.infof("User created/updated successfully: %s (Customer: %s)",
+                    username, userInfo.get("customerNumber"));
+            return user;
+
+        } catch (Exception e) {
+            logger.error("Error creating/updating user in Keycloak", e);
+            return null;
+        }
+    }
+
+    private void cleanupSessionDirect(AuthenticationSessionModel authSession) {
+        logger.info("Cleaning up session for direct login");
+
+        String[] keysToRemove = {
+                EXTERNAL_USERNAME, EXTERNAL_PASSWORD,
+                EXT_API_RESPONSE_CODE, EXT_API_RESPONSE_MESSAGE, EXT_API_SUCCESS
+        };
+
+        for (String key : keysToRemove) {
+            authSession.removeAuthNote(key);
+        }
+    }
+
+    private UserModel createUserInKeycloak(AuthenticationFlowContext context, Map<String, String> userInfo) {
+        try {
+            logger.info("Creating new user in Keycloak with user info");
+
+            RealmModel realm = context.getRealm();
+            UserModel newUser = context.getSession().users().addUser(realm, userInfo.get("username"));
+
+            setUserAttributes(newUser, userInfo);
+
+            logger.infof("User created in Keycloak successfully: %s (Customer: %s)",
+                    newUser.getUsername(), userInfo.get("customerNumber"));
+
+            return newUser;
+        } catch (Exception e) {
+            logger.error("Error creating user in Keycloak", e);
+            return null;
+        }
+    }
+
+    private void updateUserInKeycloak(UserModel user, Map<String, String> userInfo) {
+        try {
+            logger.info("Updating existing user in Keycloak");
+            setUserAttributes(user, userInfo);
+            logger.infof("User updated in Keycloak successfully: %s", user.getUsername());
+        } catch (Exception e) {
+            logger.error("Error updating user in Keycloak", e);
+        }
+    }
+
+    private void setUserAttributes(UserModel user, Map<String, String> userInfo) {
+        user.setEnabled(true);
+        user.setEmail(userInfo.get("email"));
+
+        String fullName = userInfo.get("fullName");
+        if (fullName != null && !fullName.isEmpty()) {
+            String[] names = fullName.split(" ", 2);
+            if (names.length > 0) {
+                user.setFirstName(names[0]);
+                if (names.length > 1) {
+                    user.setLastName(names[1]);
+                }
+            }
+        }
+
+        user.setSingleAttribute("mobile", userInfo.get("mobile"));
+        user.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
+        user.setSingleAttribute("externalVerified", "true");
+        user.setSingleAttribute("lastExternalVerification", String.valueOf(System.currentTimeMillis()));
     }
 
     private void storeDataForNextStep(AuthenticationSessionModel authSession, String username,
