@@ -527,11 +527,9 @@ public class SmartOtpAuthenticator implements Authenticator {
 
     @Override
     public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
-        // No required actions
     }
 
     @Override
     public void close() {
-        // No resources to close
     }
 }
