@@ -318,23 +318,42 @@ public class SmartOtpAuthenticator implements Authenticator {
     }
 
 
+// Trong SmartOtpAuthenticator.java - Update completeAuthentication method
+
     private void completeAuthentication(AuthenticationFlowContext context) {
         logger.info("=== Completing authentication ===");
+
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
         try {
             UserModel user = context.getUser();
 
             if (user == null) {
-                logger.error("No user found in context - this should not happen");
-                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
-                return;
+                logger.warn("No user found in context, attempting to create from session data");
+
+                String userInfoJson = authSession.getAuthNote(USER_INFO_JSON);
+                if (userInfoJson == null || userInfoJson.isEmpty()) {
+                    logger.error("No user info found for authentication completion");
+                    context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                    return;
+                }
+
+                String username = authSession.getAuthNote(VERIFIED_USERNAME);
+
+                user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+
+                if (user == null) {
+                    logger.error("Failed to create user in Keycloak");
+                    context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                    return;
+                } else {
+                    logger.infof("Updating existing user in Keycloak: %s", username);
+                }
+
+                context.setUser(user);
             }
-
-            logger.infof("User already exists in context: %s", user.getUsername());
-            user.setSingleAttribute("lastOtpVerification", String.valueOf(System.currentTimeMillis()));
-            user.setSingleAttribute("otpVerified", "true");
-
             cleanupSession(authSession);
+
             context.success();
 
             logger.infof("Authentication completed successfully for user: %s", user.getUsername());

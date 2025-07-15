@@ -93,42 +93,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         return "true".equals(session.getAuthNote(EXTERNAL_VERIFICATION_COMPLETED));
     }
 
-
-    private boolean isNextStepEnabled(AuthenticationFlowContext context) {
-        return context.getExecution().getFlowId() != null &&
-                hasEnabledNextStep(context);
-    }
-
-    private boolean hasEnabledNextStep(AuthenticationFlowContext context) {
-        try {
-            List<AuthenticationExecutionModel> executions = context.getRealm()
-                    .getAuthenticationExecutionsStream(context.getExecution().getFlowId())
-                    .collect(Collectors.toList());
-
-            int currentIndex = -1;
-            for (int i = 0; i < executions.size(); i++) {
-                if (executions.get(i).getId().equals(context.getExecution().getId())) {
-                    currentIndex = i;
-                    break;
-                }
-            }
-
-            if (currentIndex >= 0 && currentIndex < executions.size() - 1) {
-                for (int i = currentIndex + 1; i < executions.size(); i++) {
-                    AuthenticationExecutionModel nextExec = executions.get(i);
-                    if (nextExec.getRequirement() != AuthenticationExecutionModel.Requirement.DISABLED) {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        } catch (Exception e) {
-            logger.error("Error checking next step", e);
-            return true;
-        }
-    }
-
     private void handleCredentialsVerification(AuthenticationFlowContext context, String username, String password) {
         logger.info("=== Handling credentials verification ===");
         logger.infof("Verifying credentials for username: %s", username);
@@ -190,6 +154,7 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                     customerNumber, userInfo.get("email"), userInfo.get("mobile"));
 
             logger.info("Creating/updating user in Keycloak after successful verification");
+
             UserModel user = createOrUpdateUser(context, username, userInfo);
             if (user == null) {
                 logger.error("Failed to create/update user in Keycloak");
@@ -200,15 +165,8 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
             context.setUser(user);
             logger.infof("User context set for: %s", username);
 
-            if (!isNextStepEnabled(context)) {
-                logger.info("No next step enabled, completing authentication directly");
-                cleanupSessionDirect(authSession);
-                context.success();
-                logger.infof("Authentication completed directly for user: %s", username);
-                return;
-            }
-
             storeDataForNextStep(authSession, username, customerNumber, userInfo);
+
             authSession.removeAuthNote(EXTERNAL_PASSWORD);
 
             logger.info("External verification completed successfully, proceeding to next step");
