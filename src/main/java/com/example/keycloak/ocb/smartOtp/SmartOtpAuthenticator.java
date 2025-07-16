@@ -324,8 +324,6 @@ public class SmartOtpAuthenticator implements Authenticator {
 
         clearOtpSession(authSession);
         clearExternalVerificationSession(authSession);
-        context.setUser(null);
-
         // Fork for restarting flow
         logger.info("Restarting authentication flow from beginning");
         context.fork();
