@@ -318,8 +318,6 @@ public class SmartOtpAuthenticator implements Authenticator {
     }
 
 
-// Trong SmartOtpAuthenticator.java - Update completeAuthentication method
-
     private void completeAuthentication(AuthenticationFlowContext context) {
         logger.info("=== Completing authentication ===");
 
@@ -412,7 +410,7 @@ public class SmartOtpAuthenticator implements Authenticator {
         }
 
         LoginFormsProvider form = context.form()
-                .setAttribute("showCredentialsForm", false)
+                .setAttribute("showCredentialsForm", true)
                 .setAttribute("showOtpForm", false)
                 .setAttribute("showOtpField", false)
                 .setAttribute("otpCreationFailed", true)

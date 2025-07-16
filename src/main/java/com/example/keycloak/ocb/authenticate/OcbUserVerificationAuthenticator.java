@@ -186,7 +186,7 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
 
             if (user == null) {
                 logger.infof("Creating new user in Keycloak: %s", username);
-                user = createUserInKeycloak(context, userInfo);
+                user = createUserInKeycloak(context, username, userInfo);
                 if (user == null) {
                     logger.error("Failed to create user in Keycloak");
                     return null;
@@ -206,25 +206,21 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         }
     }
 
-    private void cleanupSessionDirect(AuthenticationSessionModel authSession) {
-        logger.info("Cleaning up session for direct login");
-
-        String[] keysToRemove = {
-                EXTERNAL_USERNAME, EXTERNAL_PASSWORD,
-                EXT_API_RESPONSE_CODE, EXT_API_RESPONSE_MESSAGE, EXT_API_SUCCESS
-        };
-
-        for (String key : keysToRemove) {
-            authSession.removeAuthNote(key);
-        }
-    }
-
-    private UserModel createUserInKeycloak(AuthenticationFlowContext context, Map<String, String> userInfo) {
+    private UserModel createUserInKeycloak(AuthenticationFlowContext context, String username, Map<String, String> userInfo) {
         try {
             logger.info("Creating new user in Keycloak with user info");
+            logger.infof("Creating user with username: %s", username);
+
+            // Validate username again
+            if (username == null || username.trim().isEmpty()) {
+                logger.error("Cannot create user: username is null or empty");
+                return null;
+            }
 
             RealmModel realm = context.getRealm();
-            UserModel newUser = context.getSession().users().addUser(realm, userInfo.get("username"));
+
+            // Use the verified username, not from userInfo
+            UserModel newUser = context.getSession().users().addUser(realm, username.trim());
 
             setUserAttributes(newUser, userInfo);
 
@@ -296,7 +292,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         if (errorMessage == null || errorMessage.isEmpty()) {
             errorMessage = "Thông tin đăng nhập không chính xác";
         }
-
         showLoginForm(context, errorMessage, MessageType.ERROR);
     }
 
