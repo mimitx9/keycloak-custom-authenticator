@@ -1,6 +1,7 @@
 package com.example.keycloak.ocb.authenticate.config;
 
 import com.example.keycloak.ocb.auth_deprecated.ExternalUserVerificationAuthenticatorFactory;
+import com.example.keycloak.ocb.authenticate.OcbUserVerificationAuthenticatorFactory;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.models.AuthenticatorConfigModel;
@@ -14,12 +15,15 @@ public class OcbVerificationConfig {
     private final String apiPassword;
     private final int timeout;
 
+    private final boolean isLastStep;
 
-    private OcbVerificationConfig(String apiUrl, String apiUsername, String apiPassword, int timeout) {
+
+    private OcbVerificationConfig(String apiUrl, String apiUsername, String apiPassword, int timeout, boolean isLastStep) {
         this.apiUrl = apiUrl;
         this.apiUsername = apiUsername;
         this.apiPassword = apiPassword;
         this.timeout = timeout;
+        this.isLastStep = isLastStep;
     }
 
     // Original getters
@@ -39,20 +43,24 @@ public class OcbVerificationConfig {
         return timeout;
     }
 
+    public boolean getIsLatStep() {
+        return isLastStep;
+    }
+
 
     public static OcbVerificationConfig getConfig(AuthenticationFlowContext context) {
         AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
 
         if (configModel == null || configModel.getConfig() == null) {
             logger.warn("No configuration found for External User Verification authenticator");
-            return new OcbVerificationConfig("", "", "", DEFAULT_TIMEOUT);
+            return new OcbVerificationConfig("", "", "", DEFAULT_TIMEOUT, false);
         }
 
-        String apiUrl = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_API_URL);
-        String apiUsername = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_API_USERNAME);
-        String apiPassword = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_API_PASSWORD);
-        String timeoutStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_TIMEOUT);
-
+        String apiUrl = configModel.getConfig().get(OcbUserVerificationAuthenticatorFactory.CONFIG_API_URL);
+        String apiUsername = configModel.getConfig().get(OcbUserVerificationAuthenticatorFactory.CONFIG_API_USERNAME);
+        String apiPassword = configModel.getConfig().get(OcbUserVerificationAuthenticatorFactory.CONFIG_API_PASSWORD);
+        String timeoutStr = configModel.getConfig().get(OcbUserVerificationAuthenticatorFactory.CONFIG_TIMEOUT);
+        String isLastStepStr = configModel.getConfig().get(OcbUserVerificationAuthenticatorFactory.CONFIG_IS_LAST_STEP);
         int timeout = DEFAULT_TIMEOUT;
         if (timeoutStr != null && !timeoutStr.isEmpty()) {
             try {
@@ -75,9 +83,13 @@ public class OcbVerificationConfig {
         if (apiUsername == null || apiUsername.isEmpty() || apiPassword == null || apiPassword.isEmpty()) {
             logger.warn("API credentials may not be properly configured for External User Verification");
         }
+        boolean isLastStep = false;
+        if (isLastStepStr != null && !isLastStepStr.isEmpty()) {
+            isLastStep = Boolean.parseBoolean(isLastStepStr);
+        }
 
         return new OcbVerificationConfig(
-                apiUrl, apiUsername, apiPassword, timeout
+                apiUrl, apiUsername, apiPassword, timeout, isLastStep
         );
     }
 

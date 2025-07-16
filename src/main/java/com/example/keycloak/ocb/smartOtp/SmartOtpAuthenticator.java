@@ -351,7 +351,7 @@ public class SmartOtpAuthenticator implements Authenticator {
                 context.setUser(user);
             }
             cleanupSession(authSession);
-
+            context.setUser(user);
             context.success();
 
             logger.infof("Authentication completed successfully for user: %s", user.getUsername());
@@ -416,7 +416,7 @@ public class SmartOtpAuthenticator implements Authenticator {
                 .setAttribute("otpCreationFailed", true)
                 .setAttribute("otpApiResponseCode", otpResponse.getMessage())
                 .setAttribute("otpApiResponseMessage", errorMessage)
-                .setAttribute("otpVerifySuccess", false)
+                .setAttribute("otpApiSuccess", false)
                 .setAttribute("backAction", ACTION_BACK_TO_LOGIN)
                 .setAttribute("backButtonText", "Quay lại đăng nhập")
                 .setError(errorMessage);

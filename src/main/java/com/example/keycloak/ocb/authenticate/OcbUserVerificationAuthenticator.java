@@ -161,12 +161,13 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                 showLoginForm(context, "Lỗi tạo thông tin người dùng", MessageType.ERROR);
                 return;
             }
-
-            context.setUser(user);
-            logger.infof("User context set for: %s", username);
-
+            if (config.getIsLatStep()) {
+                logger.info("This is the last step, setting user as authenticated");
+                context.setUser(user);
+            } else {
+                logger.info("Not the last step, user will be set in next step");
+            }
             storeDataForNextStep(authSession, username, customerNumber, userInfo);
-
             authSession.removeAuthNote(EXTERNAL_PASSWORD);
 
             logger.info("External verification completed successfully, proceeding to next step");

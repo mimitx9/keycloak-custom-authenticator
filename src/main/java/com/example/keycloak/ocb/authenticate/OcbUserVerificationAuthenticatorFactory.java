@@ -17,6 +17,7 @@ public class OcbUserVerificationAuthenticatorFactory implements AuthenticatorFac
     public static final String CONFIG_API_USERNAME = "apiUsername";
     public static final String CONFIG_API_PASSWORD = "apiPassword";
     public static final String CONFIG_TIMEOUT = "timeout";
+    public static final String CONFIG_IS_LAST_STEP = "isLastStep";
 
     public static final String PROVIDER_ID = "ocb-user-verification";
 
@@ -87,6 +88,14 @@ public class OcbUserVerificationAuthenticatorFactory implements AuthenticatorFac
         timeout.setType(ProviderConfigProperty.STRING_TYPE);
         timeout.setHelpText("Timeout cho API calls đến OCB (mặc định: 10 giây)");
         timeout.setDefaultValue("10");
+        config.add(timeout);
+
+        ProviderConfigProperty isLastStep = new ProviderConfigProperty();
+        isLastStep.setName(CONFIG_IS_LAST_STEP);
+        isLastStep.setLabel("Flag check");
+        isLastStep.setType(ProviderConfigProperty.STRING_TYPE);
+        isLastStep.setHelpText("Check if user verification is last step of authentication flow");
+        isLastStep.setDefaultValue(false);
         config.add(timeout);
 
         return config;
