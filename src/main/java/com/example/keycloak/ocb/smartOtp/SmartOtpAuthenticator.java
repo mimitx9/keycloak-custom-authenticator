@@ -166,7 +166,7 @@ public class SmartOtpAuthenticator implements Authenticator {
             if (!otpLimiter.canCreateOtpTransaction(username)) {
                 logger.warnf("User %s has exceeded daily OTP limit (%d)", username, config.getMaxOtpPerDay());
 
-                OtpResponse limitExceededResponse = OtpResponse.error("EXCEED_LIMIT_OTP",
+                OtpResponse limitExceededResponse = OtpResponse.error("-9999",
                         "Bạn đã vượt quá giới hạn tạo OTP trong ngày. Vui lòng thử lại vào ngày mai.");
 
                 handleOtpCreationError(context, limitExceededResponse);
@@ -416,6 +416,9 @@ public class SmartOtpAuthenticator implements Authenticator {
                 .setAttribute("showOtpForm", false)
                 .setAttribute("showOtpField", false)
                 .setAttribute("otpCreationFailed", true)
+                .setAttribute("otpApiResponseCode", otpResponse.getMessage())
+                .setAttribute("otpApiResponseMessage", errorMessage)
+                .setAttribute("otpVerifySuccess", false)
                 .setAttribute("backAction", ACTION_BACK_TO_LOGIN)
                 .setAttribute("backButtonText", "Quay lại đăng nhập")
                 .setError(errorMessage);

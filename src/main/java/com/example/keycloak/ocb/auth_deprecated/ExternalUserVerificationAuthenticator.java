@@ -265,7 +265,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             if (!otpLimiter.canCreateOtpTransaction(username)) {
                 logger.warnf("User %s has exceeded daily OTP limit (%d)", username, config.getMaxOtpPerDay());
 
-                OtpResponse limitExceededResponse = OtpResponse.error("EXCEED_LIMIT_OTP",
+                OtpResponse limitExceededResponse = OtpResponse.error("-9999",
                         "Bạn đã vượt quá giới hạn tạo OTP trong ngày. Vui lòng thử lại vào ngày mai.");
 
                 handleOtpCreationError(context, limitExceededResponse);
