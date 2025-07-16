@@ -321,12 +321,15 @@ public class SmartOtpAuthenticator implements Authenticator {
     private void handleBackToLogin(AuthenticationFlowContext context) {
         logger.info("=== Handling back to login ===");
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
         clearOtpSession(authSession);
         clearExternalVerificationSession(authSession);
+        context.setUser(null);
 
-        context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
+        // Fork for restarting flow
+        logger.info("Restarting authentication flow from beginning");
+        context.fork();
     }
-
 
     private void completeAuthentication(AuthenticationFlowContext context) {
         logger.info("=== Completing authentication ===");
