@@ -54,17 +54,27 @@ public class SmartOtpAuthenticator implements Authenticator {
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
-        UserModel user = context.getUser();
-        if (user == null) {
-            logger.error("No user found in context. Previous step should have set the user.");
+        if (!isExternalVerificationCompleted(authSession)) {
+            logger.error("External verification not completed. Cannot proceed with OTP.");
             context.failure(AuthenticationFlowError.INTERNAL_ERROR);
             return;
         }
 
-        logger.infof("User context found: %s", user.getUsername());
+        String username = authSession.getAuthNote(VERIFIED_USERNAME);
+        UserModel user = null;
 
-        if (!isExternalVerificationCompleted(authSession)) {
-            logger.error("External verification not completed. Cannot proceed with OTP.");
+        if (username != null && !username.trim().isEmpty()) {
+            user = context.getSession().users().getUserByUsername(context.getRealm(), username.trim());
+            if (user != null) {
+                logger.infof("Found user for OTP authentication: %s", user.getUsername());
+                context.setUser(user);
+            } else {
+                logger.error("User not found in Keycloak: " + username);
+                context.failure(AuthenticationFlowError.INTERNAL_ERROR);
+                return;
+            }
+        } else {
+            logger.error("No verified username found in session");
             context.failure(AuthenticationFlowError.INTERNAL_ERROR);
             return;
         }
