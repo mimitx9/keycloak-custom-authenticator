@@ -1,7 +1,7 @@
 package com.example.keycloak.ocb.auth_deprecated;
 
 import com.example.keycloak.ocb.authenticate.client.OcbClient;
-import com.example.keycloak.ocb.authenticate.model.ApiResponse;
+import com.example.keycloak.ocb.auth_deprecated.ApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -42,7 +42,7 @@ public class ExternalApiClient {
         this.timeoutSeconds = timeoutSeconds;
     }
 
-    public com.example.keycloak.ocb.authenticate.model.ApiResponse verifyUser(String username, String password) {
+    public ApiResponse verifyUser(String username, String password) {
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectionRequestTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
                 .setConnectTimeout((int) TimeUnit.SECONDS.toMillis(timeoutSeconds))
@@ -85,22 +85,22 @@ public class ExternalApiClient {
             }
         } catch (SocketTimeoutException e) {
             logger.error("Request timeout after " + timeoutSeconds + " seconds", e);
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("TIMEOUT", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("TIMEOUT", DEFAULT_ERROR_MESSAGE);
         } catch (IOException e) {
             logger.error("IO error calling external API", e);
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("CONNECTION_ERROR", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("CONNECTION_ERROR", DEFAULT_ERROR_MESSAGE);
         } catch (Exception e) {
             logger.error("Unexpected error calling external API", e);
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("UNEXPECTED_ERROR", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("UNEXPECTED_ERROR", DEFAULT_ERROR_MESSAGE);
         }
     }
 
-    private com.example.keycloak.ocb.authenticate.model.ApiResponse handleSuccessHttpStatus(CloseableHttpResponse response) {
+    private ApiResponse handleSuccessHttpStatus(CloseableHttpResponse response) {
         try {
             HttpEntity entity = response.getEntity();
             if (entity == null) {
                 logger.warn("API response entity is null");
-                return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("NULL_RESPONSE", DEFAULT_ERROR_MESSAGE);
+                return ApiResponse.error("NULL_RESPONSE", DEFAULT_ERROR_MESSAGE);
             }
 
             String responseString = EntityUtils.toString(entity, StandardCharsets.UTF_8);
@@ -108,18 +108,18 @@ public class ExternalApiClient {
 
             if (responseString.isEmpty()) {
                 logger.warn("Response string is empty");
-                return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("EMPTY_RESPONSE", DEFAULT_ERROR_MESSAGE);
+                return ApiResponse.error("EMPTY_RESPONSE", DEFAULT_ERROR_MESSAGE);
             }
 
             return parseApiResponse(responseString);
 
         } catch (IOException e) {
             logger.error("Error reading response entity", e);
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("RESPONSE_READ_ERROR", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("RESPONSE_READ_ERROR", DEFAULT_ERROR_MESSAGE);
         }
     }
 
-    private com.example.keycloak.ocb.authenticate.model.ApiResponse parseApiResponse(String responseString) {
+    private ApiResponse parseApiResponse(String responseString) {
         try {
             JsonNode jsonResponse = mapper.readTree(responseString);
 
@@ -135,19 +135,19 @@ public class ExternalApiClient {
                 // Tất cả các code khác đều là lỗi
                 logger.warnf("API returned error code: %s, message: %s", code, message);
                 String errorMessage = (message != null && !message.isEmpty()) ? message : DEFAULT_ERROR_MESSAGE;
-                return com.example.keycloak.ocb.authenticate.model.ApiResponse.error(code, errorMessage);
+                return ApiResponse.error(code, errorMessage);
             }
 
         } catch (Exception e) {
             logger.error("Error parsing JSON response", e);
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("PARSE_ERROR", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("PARSE_ERROR", DEFAULT_ERROR_MESSAGE);
         }
     }
 
-    private com.example.keycloak.ocb.authenticate.model.ApiResponse parseSuccessResponse(JsonNode jsonResponse) {
+    private ApiResponse parseSuccessResponse(JsonNode jsonResponse) {
         if (!jsonResponse.has("data")) {
             logger.warn("Success response but no data field");
-            return com.example.keycloak.ocb.authenticate.model.ApiResponse.error("NO_DATA", DEFAULT_ERROR_MESSAGE);
+            return ApiResponse.error("NO_DATA", DEFAULT_ERROR_MESSAGE);
         }
 
         JsonNode data = jsonResponse.get("data");
@@ -159,10 +159,10 @@ public class ExternalApiClient {
         userInfo.put("mobile", getTextSafely(data, "mobile"));
 
         logger.info("Successfully parsed user info from API response");
-        return com.example.keycloak.ocb.authenticate.model.ApiResponse.success(userInfo);
+        return ApiResponse.success(userInfo);
     }
 
-    private com.example.keycloak.ocb.authenticate.model.ApiResponse handleHttpErrorStatus(int statusCode, CloseableHttpResponse response) {
+    private ApiResponse handleHttpErrorStatus(int statusCode, CloseableHttpResponse response) {
         logger.warnf("HTTP error status: %d", statusCode);
 
         String apiMessage = "";
