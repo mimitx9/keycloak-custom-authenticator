@@ -76,7 +76,6 @@ public class ExternalApiClient {
                 int statusCode = response.getStatusLine().getStatusCode();
                 logger.infof("Response status code: %d", statusCode);
 
-                // Chỉ xử lý khi HTTP status = 200
                 if (statusCode == 200) {
                     return handleSuccessHttpStatus(response);
                 } else {
