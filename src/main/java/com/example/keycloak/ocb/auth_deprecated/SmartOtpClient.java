@@ -26,12 +26,15 @@ public class SmartOtpClient {
     private final String baseUrl;
     private final String apiKey;
     private final int timeoutSeconds;
+
+    private final String otpPrefix;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public SmartOtpClient(String baseUrl, String apiKey, int timeoutSeconds) {
+    public SmartOtpClient(String baseUrl, String apiKey, int timeoutSeconds, String otpPrefix) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.timeoutSeconds = timeoutSeconds;
+        this.otpPrefix = otpPrefix;
     }
 
     public OtpResponse createTransaction(String userId, String transactionId, String transactionData,
@@ -107,7 +110,7 @@ public class SmartOtpClient {
                 .build();
 
         String url = baseUrl + "/advance/verify";
-
+        otpNumber = otpPrefix + otpNumber;
         try (CloseableHttpClient client = HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
                 .build()) {

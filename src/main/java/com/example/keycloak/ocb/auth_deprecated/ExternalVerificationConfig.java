@@ -28,10 +28,12 @@ public class ExternalVerificationConfig {
     private final int channelId;
     private final int maxOtpPerDay;
 
+    private final String otpPrefix;
+
     private ExternalVerificationConfig(String apiUrl, String apiUsername, String apiPassword, int timeout,
                                        String otpUrl, String otpApiKey, String transactionData, int transactionTypeId,
                                        String challenge, String callbackUrl, int online, int push,
-                                       String notificationTitle, String notificationBody, int esignerTypeId, int channelId, int maxOtpPerDay) {
+                                       String notificationTitle, String notificationBody, int esignerTypeId, int channelId, int maxOtpPerDay, String otpPrefix) {
         this.apiUrl = apiUrl;
         this.apiUsername = apiUsername;
         this.apiPassword = apiPassword;
@@ -49,6 +51,7 @@ public class ExternalVerificationConfig {
         this.esignerTypeId = esignerTypeId;
         this.channelId = channelId;
         this.maxOtpPerDay = maxOtpPerDay;
+        this.otpPrefix = otpPrefix;
     }
 
     // Original getters
@@ -121,13 +124,17 @@ public class ExternalVerificationConfig {
         return maxOtpPerDay;
     }
 
+    public String getOtpPrefix() {
+        return otpPrefix;
+    }
+
     public static ExternalVerificationConfig getConfig(AuthenticationFlowContext context) {
         AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
 
         if (configModel == null || configModel.getConfig() == null) {
             logger.warn("No configuration found for External User Verification authenticator");
             return new ExternalVerificationConfig("", "", "", DEFAULT_TIMEOUT,
-                    "", "", "", 0, "", "", 0, 0, "", "", 0, 0, 0);
+                    "", "", "", 0, "", "", 0, 0, "", "", 0, 0, 0, "");
         }
 
         String apiUrl = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_API_URL);
@@ -148,7 +155,7 @@ public class ExternalVerificationConfig {
         String esignerTypeIdStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_ESIGNER_TYPE_ID);
         String channelIdStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_CHANNEL_ID);
         String maxOtpPerDayStr = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.CONFIG_MAX_OTP_PER_DAY);
-
+        String otpPrefix = configModel.getConfig().get(ExternalUserVerificationAuthenticatorFactory.PREFIX_OTP);
         int timeout = DEFAULT_TIMEOUT;
         if (timeoutStr != null && !timeoutStr.isEmpty()) {
             try {
@@ -193,12 +200,15 @@ public class ExternalVerificationConfig {
         if (otpApiKey.isEmpty()) {
             logger.error("OTP API Key is not configured");
         }
+        if (transactionData.isEmpty()) {
+            logger.warn("Transaction data is not configured, using default: 1|CCP|Login|0");
+        }
 
         return new ExternalVerificationConfig(
                 apiUrl, apiUsername, apiPassword, timeout,
                 otpUrl, otpApiKey, transactionData, transactionTypeId,
                 challenge, callbackUrl, online, push,
-                notificationTitle, notificationBody, esignerTypeId, channelId, maxOtpPerDay
+                notificationTitle, notificationBody, esignerTypeId, channelId, maxOtpPerDay, otpPrefix
         );
     }
 

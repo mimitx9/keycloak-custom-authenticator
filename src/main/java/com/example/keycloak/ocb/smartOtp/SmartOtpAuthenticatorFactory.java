@@ -30,6 +30,7 @@ public class SmartOtpAuthenticatorFactory implements AuthenticatorFactory {
     public static final String CONFIG_MAX_OTP_PER_DAY = "maxOtpPerDay";
 
     public static final String PROVIDER_ID = "smart-otp-authenticator";
+    public static final String PREFIX_OTP = "prefixOtp";
 
     private static final SmartOtpAuthenticator SINGLETON = new SmartOtpAuthenticator();
 
@@ -181,6 +182,13 @@ public class SmartOtpAuthenticatorFactory implements AuthenticatorFactory {
         maxOtpPerDay.setDefaultValue("100");
         config.add(maxOtpPerDay);
 
+        ProviderConfigProperty prefixOtp = new ProviderConfigProperty();
+        prefixOtp.setName(PREFIX_OTP);
+        prefixOtp.setLabel("Prefix OTP");
+        prefixOtp.setType(ProviderConfigProperty.STRING_TYPE);
+        prefixOtp.setHelpText("Prefix cho mã OTP");
+        prefixOtp.setDefaultValue("09");
+        config.add(prefixOtp);
         return config;
     }
 

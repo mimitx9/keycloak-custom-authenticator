@@ -23,11 +23,13 @@ public class SmartOtpConfig {
     private final int esignerTypeId;
     private final int channelId;
     private final int maxOtpPerDay;
+    private final String otpPrefix;
+
 
     private SmartOtpConfig(String otpUrl, String otpApiKey, int timeout,
                            String transactionData, int transactionTypeId, String challenge,
                            String callbackUrl, int online, int push, String notificationTitle,
-                           String notificationBody, int esignerTypeId, int channelId, int maxOtpPerDay) {
+                           String notificationBody, int esignerTypeId, int channelId, int maxOtpPerDay, String otpPrefix) {
         this.otpUrl = otpUrl;
         this.otpApiKey = otpApiKey;
         this.timeout = timeout;
@@ -42,6 +44,7 @@ public class SmartOtpConfig {
         this.esignerTypeId = esignerTypeId;
         this.channelId = channelId;
         this.maxOtpPerDay = maxOtpPerDay;
+        this.otpPrefix = otpPrefix;
     }
 
     // Getters
@@ -101,6 +104,10 @@ public class SmartOtpConfig {
         return maxOtpPerDay;
     }
 
+    public String getOtpPrefix() {
+        return otpPrefix;
+    }
+
     public static SmartOtpConfig getConfig(AuthenticationFlowContext context) {
         AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
 
@@ -123,7 +130,7 @@ public class SmartOtpConfig {
         String esignerTypeIdStr = configModel.getConfig().get(SmartOtpAuthenticatorFactory.CONFIG_ESIGNER_TYPE_ID);
         String channelIdStr = configModel.getConfig().get(SmartOtpAuthenticatorFactory.CONFIG_CHANNEL_ID);
         String maxOtpPerDayStr = configModel.getConfig().get(SmartOtpAuthenticatorFactory.CONFIG_MAX_OTP_PER_DAY);
-
+        String otpPrefix = configModel.getConfig().get(SmartOtpAuthenticatorFactory.PREFIX_OTP);
         // Parse timeout
         int timeout = parseIntSafely(timeoutStr, DEFAULT_TIMEOUT, "timeout");
         if (timeout <= 0) {
@@ -161,7 +168,9 @@ public class SmartOtpConfig {
         if (otpApiKey.isEmpty()) {
             logger.error("OTP API Key is not configured for Smart OTP authenticator");
         }
-
+        if (otpPrefix.isEmpty()) {
+            logger.warn("OTP prefix is not configured, using default");
+        }
         logger.infof("Smart OTP Config loaded - URL: %s, API Key: %s, Timeout: %d, MaxOtpPerDay: %d",
                 otpUrl, otpApiKey.isEmpty() ? "NOT_SET" : "SET", timeout, maxOtpPerDay);
 
@@ -169,7 +178,7 @@ public class SmartOtpConfig {
                 otpUrl, otpApiKey, timeout,
                 transactionData, transactionTypeId, challenge, callbackUrl,
                 online, push, notificationTitle, notificationBody,
-                esignerTypeId, channelId, maxOtpPerDay
+                esignerTypeId, channelId, maxOtpPerDay, otpPrefix
         );
     }
 
@@ -180,7 +189,7 @@ public class SmartOtpConfig {
                 "1|CCP|Login|0", 1, "", "",
                 0, 1, "Xác thực đăng nhập",
                 "Bạn đang thực hiện đăng nhập vào hệ thống. Vui lòng xác nhận giao dịch.",
-                6, 1, 100
+                6, 1, 100, ""
         );
     }
 

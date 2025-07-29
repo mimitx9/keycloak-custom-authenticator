@@ -30,6 +30,9 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
     public static final String CONFIG_ESIGNER_TYPE_ID = "esignerTypeId";
     public static final String CONFIG_CHANNEL_ID = "channelId";
     public static final String CONFIG_MAX_OTP_PER_DAY = "maxOtpPerDay";
+
+    public static final String PREFIX_OTP = "prefixOtp";
+
     public static final String PROVIDER_ID = "external-user-verification";
     private static final ExternalUserVerificationAuthenticator SINGLETON = new ExternalUserVerificationAuthenticator();
 
@@ -202,6 +205,14 @@ public class ExternalUserVerificationAuthenticatorFactory implements Authenticat
         maxOtpPerDay.setHelpText("Số lượng OTP tối đa cho mỗi ngày");
         maxOtpPerDay.setDefaultValue("100");
         config.add(maxOtpPerDay);
+
+        ProviderConfigProperty prefixOtp = new ProviderConfigProperty();
+        prefixOtp.setName(PREFIX_OTP);
+        prefixOtp.setLabel("Prefix OTP");
+        prefixOtp.setType(ProviderConfigProperty.STRING_TYPE);
+        prefixOtp.setHelpText("Prefix cho mã OTP");
+        prefixOtp.setDefaultValue("09");
+        config.add(prefixOtp);
 
         return config;
     }

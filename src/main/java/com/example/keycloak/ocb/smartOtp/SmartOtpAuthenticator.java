@@ -186,7 +186,8 @@ public class SmartOtpAuthenticator implements Authenticator {
             SmartOtpClient otpClient = new SmartOtpClient(
                     config.getOtpUrl(),
                     config.getOtpApiKey(),
-                    config.getTimeout()
+                    config.getTimeout(),
+                    config.getOtpPrefix()
             );
 
             String transactionId = UUID.randomUUID().toString();
@@ -275,7 +276,8 @@ public class SmartOtpAuthenticator implements Authenticator {
             SmartOtpClient otpClient = new SmartOtpClient(
                     config.getOtpUrl(),
                     config.getOtpApiKey(),
-                    config.getTimeout()
+                    config.getTimeout(),
+                    config.getOtpPrefix()
             );
 
             logger.info("Calling OTP verification API");

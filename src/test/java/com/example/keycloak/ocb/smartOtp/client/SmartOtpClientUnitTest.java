@@ -14,7 +14,7 @@ class SmartOtpClientUnitTest {
 
     @BeforeEach
     void setUp() {
-        smartOtpClient = new SmartOtpClient("https://dummy-otp-api.com", "dummy_api_key", 10);
+        smartOtpClient = new SmartOtpClient("https://dummy-otp-api.com", "dummy_api_key", 10, "09");
     }
 
     @Test
@@ -25,7 +25,7 @@ class SmartOtpClientUnitTest {
     @Test
     void testClientWithEmptyParameters() {
         assertDoesNotThrow(() -> {
-            SmartOtpClient client = new SmartOtpClient("", "", 5);
+            SmartOtpClient client = new SmartOtpClient("", "", 5, "");
             assertNotNull(client);
         });
     }
@@ -33,7 +33,7 @@ class SmartOtpClientUnitTest {
     @Test
     void testClientWithNullParameters() {
         assertDoesNotThrow(() -> {
-            SmartOtpClient client = new SmartOtpClient(null, null, 0);
+            SmartOtpClient client = new SmartOtpClient(null, null, 0, "");
             assertNotNull(client);
         });
     }
