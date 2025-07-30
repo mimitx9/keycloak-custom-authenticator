@@ -4,4 +4,5 @@ com.example.keycloak.ocb.auth_composition.ExternalUserVerificationAuthenticatorF
 com.example.keycloak.ocb.CustomUsernamePasswordFormFactory
 com.example.keycloak.ocb.authenticate.OcbUserVerificationAuthenticatorFactory
 com.example.keycloak.ocb.smartOtp.SmartOtpAuthenticatorFactory
+com.example.keycloak.ocb.grantTypePassword.OcbDirectGrantAuthenticatorFactory
 
