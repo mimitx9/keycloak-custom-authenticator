@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth_deprecated;
+package com.example.keycloak.ocb.auth_composition;
 
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;

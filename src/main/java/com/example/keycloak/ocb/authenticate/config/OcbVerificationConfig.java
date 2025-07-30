@@ -1,6 +1,5 @@
 package com.example.keycloak.ocb.authenticate.config;
 
-import com.example.keycloak.ocb.auth_deprecated.ExternalUserVerificationAuthenticatorFactory;
 import com.example.keycloak.ocb.authenticate.OcbUserVerificationAuthenticatorFactory;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;

@@ -1,4 +1,4 @@
-package com.example.keycloak.ocb.auth_deprecated;
+package com.example.keycloak.ocb.auth_composition;
 
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;

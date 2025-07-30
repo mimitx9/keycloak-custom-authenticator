@@ -1,6 +1,6 @@
 com.example.keycloak.corp.CustomLoginFormAuthenticatorFactory
 com.example.keycloak.corp.OTPAuthenticatorFactory
-com.example.keycloak.ocb.auth_deprecated.ExternalUserVerificationAuthenticatorFactory
+com.example.keycloak.ocb.auth_composition.ExternalUserVerificationAuthenticatorFactory
 com.example.keycloak.ocb.CustomUsernamePasswordFormFactory
 com.example.keycloak.ocb.authenticate.OcbUserVerificationAuthenticatorFactory
 com.example.keycloak.ocb.smartOtp.SmartOtpAuthenticatorFactory
