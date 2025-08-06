@@ -161,12 +161,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                 showLoginForm(context, "Lỗi tạo thông tin người dùng", MessageType.ERROR);
                 return;
             }
-            if (config.getIsLatStep()) {
-                logger.info("This is the last step, setting user as authenticated");
-                context.setUser(user);
-            } else {
-                logger.info("Not the last step, user will be set in next step");
-            }
             storeDataForNextStep(authSession, username, customerNumber, userInfo);
             authSession.removeAuthNote(EXTERNAL_PASSWORD);
 
@@ -184,7 +178,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
 
         try {
             UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
-
             if (user == null) {
                 logger.infof("Creating new user in Keycloak: %s", username);
                 user = createUserInKeycloak(context, username, userInfo);
