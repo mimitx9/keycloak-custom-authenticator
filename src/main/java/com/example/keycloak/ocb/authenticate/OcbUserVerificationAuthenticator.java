@@ -314,10 +314,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
 
             // Set email if provided
             String email = userInfo.get("email");
-            if (email != null && !email.trim().isEmpty()) {
-                user.setEmail(email.trim());
-                user.setEmailVerified(false); // Let Keycloak handle email verification if needed
-            }
 
             // Set names
             String fullName = userInfo.get("fullName");
@@ -331,7 +327,7 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                 }
             }
 
-            // Set custom attributes
+            setUserAttributeIfNotEmpty(user, "email", email);
             setUserAttributeIfNotEmpty(user, "mobile", userInfo.get("mobile"));
             setUserAttributeIfNotEmpty(user, "customerNumber", userInfo.get("customerNumber"));
             user.setSingleAttribute("externalVerified", "true");

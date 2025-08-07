@@ -281,10 +281,6 @@ public class OcbDirectGrantAuthenticator implements Authenticator {
 
             // Set basic user info
             String email = userInfo.get("email");
-            if (email != null && !email.isEmpty()) {
-                user.setEmail(email);
-                user.setEmailVerified(true);
-            }
 
             String fullName = userInfo.get("fullName");
             if (fullName != null && !fullName.isEmpty()) {
@@ -296,7 +292,7 @@ public class OcbDirectGrantAuthenticator implements Authenticator {
                 }
             }
 
-            // Set custom attributes
+            user.setSingleAttribute("email", email);
             user.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
             user.setSingleAttribute("mobile", userInfo.get("mobile"));
             user.setSingleAttribute("externalVerified", "true");

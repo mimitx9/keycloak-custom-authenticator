@@ -408,8 +408,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
             UserModel newUser = context.getSession().users().addUser(realm, userInfo.get("username"));
 
             newUser.setEnabled(true);
-            newUser.setEmail(userInfo.get("email"));
-
             String fullName = userInfo.get("fullName");
             if (fullName != null && !fullName.isEmpty()) {
                 String[] names = fullName.split(" ", 2);
@@ -420,6 +418,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     }
                 }
             }
+            newUser.setSingleAttribute("email", userInfo.get("email"));
             newUser.setSingleAttribute("mobile", userInfo.get("mobile"));
             newUser.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
             newUser.setSingleAttribute("externalVerified", "true");
@@ -439,8 +438,6 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         try {
             logger.info("Updating existing user in Keycloak");
 
-            user.setEmail(userInfo.get("email"));
-
             String fullName = userInfo.get("fullName");
             if (fullName != null && !fullName.isEmpty()) {
                 String[] names = fullName.split(" ", 2);
@@ -451,7 +448,7 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
                     }
                 }
             }
-
+            user.setSingleAttribute("email", userInfo.get("email"));
             user.setSingleAttribute("mobile", userInfo.get("mobile"));
             user.setSingleAttribute("customerNumber", userInfo.get("customerNumber"));
             user.setSingleAttribute("externalVerified", "true");
