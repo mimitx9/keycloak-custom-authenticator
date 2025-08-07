@@ -38,12 +38,27 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         SUCCESS, ERROR, INFO
     }
 
+    private void clearAllVerificationState(AuthenticationSessionModel authSession) {
+        logger.info("Clearing all verification state");
+        authSession.removeAuthNote(EXTERNAL_VERIFICATION_COMPLETED);
+        authSession.removeAuthNote(VERIFIED_USERNAME);
+        authSession.removeAuthNote(CUSTOMER_NUMBER);
+        authSession.removeAuthNote(USER_INFO_JSON);
+        authSession.removeAuthNote(EXT_API_RESPONSE_CODE);
+        authSession.removeAuthNote(EXT_API_RESPONSE_MESSAGE);
+        authSession.removeAuthNote(EXT_API_SUCCESS);
+    }
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         logger.infof("=== Starting OcbUserVerificationAuthenticator - execution ID: %s ===",
                 context.getExecution().getId());
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        if (context.getUser() != null) {
+            logger.infof("User already set in context: %s - clearing verification state",
+                    context.getUser().getUsername());
+            clearAllVerificationState(authSession);
+        }
 
         if (isAlreadyVerified(authSession)) {
             logger.info("External verification already completed, setting user and proceeding");
@@ -312,9 +327,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         try {
             user.setEnabled(true);
 
-            // Set email if provided
-            String email = userInfo.get("email");
-
             // Set names
             String fullName = userInfo.get("fullName");
             if (fullName != null && !fullName.trim().isEmpty()) {
@@ -327,7 +339,8 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
                 }
             }
 
-            setUserAttributeIfNotEmpty(user, "email", email);
+            // Set custom attributes
+            setUserAttributeIfNotEmpty(user, "email", userInfo.get("email"));
             setUserAttributeIfNotEmpty(user, "mobile", userInfo.get("mobile"));
             setUserAttributeIfNotEmpty(user, "customerNumber", userInfo.get("customerNumber"));
             user.setSingleAttribute("externalVerified", "true");

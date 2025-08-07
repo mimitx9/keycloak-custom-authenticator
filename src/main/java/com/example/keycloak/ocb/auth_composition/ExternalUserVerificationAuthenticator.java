@@ -45,13 +45,8 @@ public class ExternalUserVerificationAuthenticator implements Authenticator {
         }
 
         if (currentState == null || currentState.isEmpty()) {
-            if (password != null && !password.isEmpty()) {
-                logger.info("Found credentials in session, proceeding with verification");
-                handleCredentialsVerificationFromSession(context, username, password);
-            } else {
-                logger.warn("No credentials found in session - showing fresh login form");
-                showFreshLoginForm(context);
-            }
+            logger.warn("No credentials found in session - showing fresh login form");
+            showFreshLoginForm(context);
             return;
         }
         switch (currentState) {

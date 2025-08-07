@@ -26,7 +26,6 @@ public class CustomUsernamePasswordForm implements Authenticator {
     public void action(AuthenticationFlowContext context) {
         logger.info("Starting action method in CustomUsernamePasswordForm");
 
-        // Lấy thông tin xác thực từ form mới nhất
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 
         if (formData.containsKey("cancel")) {
@@ -37,14 +36,22 @@ public class CustomUsernamePasswordForm implements Authenticator {
         String username = formData.getFirst("username");
         String password = formData.getFirst("password");
 
-        logger.infof("CustomUsernamePasswordForm received credentials - username: %s, password provided: %b",
-                username, password != null && !password.isEmpty());
-
-        // Xóa dữ liệu cũ trong session
+        // QUAN TRỌNG: Clear tất cả auth notes của bước verification
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
+        // Clear tất cả notes từ bước verification trước
         authSession.removeAuthNote("EXTERNAL_USERNAME");
         authSession.removeAuthNote("EXTERNAL_PASSWORD");
-        authSession.removeAuthNote("EXT_VERIFY_CHALLENGE_STATE");  // Đảm bảo xóa trạng thái challenge
+        authSession.removeAuthNote("EXT_VERIFY_CHALLENGE_STATE");
+
+        // THÊM: Clear các notes verification
+        authSession.removeAuthNote("EXTERNAL_VERIFICATION_COMPLETED");
+        authSession.removeAuthNote("VERIFIED_USERNAME");
+        authSession.removeAuthNote("CUSTOMER_NUMBER");
+        authSession.removeAuthNote("USER_INFO_JSON");
+        authSession.removeAuthNote("EXT_API_RESPONSE_CODE");
+        authSession.removeAuthNote("EXT_API_RESPONSE_MESSAGE");
+        authSession.removeAuthNote("EXT_API_SUCCESS");
 
         if (username == null || username.isEmpty()) {
             Response response = context.form()
@@ -62,12 +69,10 @@ public class CustomUsernamePasswordForm implements Authenticator {
             return;
         }
 
-        // Lưu thông tin mới vào session
-        logger.infof("Storing credentials in session - username: %s", username);
+        // Lưu thông tin mới
         authSession.setAuthNote("EXTERNAL_USERNAME", username);
         authSession.setAuthNote("EXTERNAL_PASSWORD", password);
 
-        // Chuyển đến bước tiếp theo
         context.success();
     }
 
