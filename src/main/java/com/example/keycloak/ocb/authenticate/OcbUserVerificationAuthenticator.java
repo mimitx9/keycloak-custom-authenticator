@@ -9,6 +9,7 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.authentication.AuthenticationFlowException;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.*;
@@ -44,6 +45,26 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
+        if (isAlreadyVerified(authSession)) {
+            logger.info("External verification already completed, setting user and proceeding");
+
+            // Try to set user from previous verification
+            String verifiedUsername = authSession.getAuthNote(VERIFIED_USERNAME);
+            if (verifiedUsername != null && context.getUser() == null) {
+                UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), verifiedUsername);
+                if (user != null) {
+                    logger.infof("Setting previously verified user: %s", verifiedUsername);
+                    try {
+                        context.setUser(user);
+                    } catch (Exception e) {
+                        logger.warnf("Could not set user %s, might already be set: %s", verifiedUsername, e.getMessage());
+                    }
+                }
+            }
+
+            context.success();
+            return;
+        }
 
         String username = authSession.getAuthNote(EXTERNAL_USERNAME);
         String password = authSession.getAuthNote(EXTERNAL_PASSWORD);
@@ -62,8 +83,6 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         logger.infof("=== Processing external verification action - execution ID: %s ===",
                 context.getExecution().getId());
 
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String username = formData.getFirst("username");
         String password = formData.getFirst("password");
@@ -81,11 +100,18 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
         username = username.trim();
         password = password.trim();
 
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
         authSession.setAuthNote(EXTERNAL_USERNAME, username);
         authSession.setAuthNote(EXTERNAL_PASSWORD, password);
 
         handleCredentialsVerification(context, username, password);
+    }
 
+    private boolean isAlreadyVerified(AuthenticationSessionModel session) {
+        String completed = session.getAuthNote(EXTERNAL_VERIFICATION_COMPLETED);
+        boolean isVerified = "true".equals(completed);
+        logger.infof("Checking if already verified: %s", isVerified);
+        return isVerified;
     }
 
     private void handleCredentialsVerification(AuthenticationFlowContext context, String username, String password) {
@@ -176,6 +202,19 @@ public class OcbUserVerificationAuthenticator implements Authenticator {
 
             // Mark verification as completed BEFORE calling success
             authSession.setAuthNote(EXTERNAL_VERIFICATION_COMPLETED, "true");
+
+            // Set the authenticated user - but only if not already set
+            if (context.getUser() == null) {
+                logger.infof("Setting authenticated user: %s", user.getUsername());
+                try {
+                    context.setUser(user);
+                } catch (AuthenticationFlowException e) {
+                    logger.warnf("Could not set user %s, might already be set: %s", user.getUsername(), e.getMessage());
+                    // Continue anyway, user might already be set by previous execution
+                }
+            } else {
+                logger.infof("User already set in context: %s", context.getUser().getUsername());
+            }
 
             logger.info("External verification completed successfully, proceeding to next step");
             context.success();
